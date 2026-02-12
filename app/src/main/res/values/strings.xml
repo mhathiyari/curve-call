@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">CurveCall</string>
+    <string name="notification_channel_name">Active Session</string>
+    <string name="notification_channel_description">Shows when CurveCall is actively narrating curves</string>
+</resources>

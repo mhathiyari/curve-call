@@ -64,7 +64,15 @@ class RouteAnalyzer {
      * @return Full [AnalysisResult] including segments, interpolated points, and quality info.
      */
     fun analyzeRouteDetailed(points: List<LatLon>, config: AnalysisConfig = AnalysisConfig()): AnalysisResult {
-        require(points.size >= 3) { "Need at least 3 route points, got ${points.size}" }
+        if (points.size < 3) {
+            return AnalysisResult(
+                segments = emptyList(),
+                interpolatedPoints = points,
+                sparseRegions = emptyList(),
+                totalDistance = if (points.size == 2) GeoMath.haversineDistance(points[0], points[1]) else 0.0,
+                curveCount = 0
+            )
+        }
 
         // Stage 1: Interpolation - resample to uniform spacing
         val interpolated = Interpolator.resample(points, config.interpolationSpacing)

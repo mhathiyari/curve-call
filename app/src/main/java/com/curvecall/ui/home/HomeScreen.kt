@@ -52,7 +52,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -82,19 +81,13 @@ fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // SAF file picker launcher
+    // SAF file picker launcher — passes URI to ViewModel which opens the stream on a background thread
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
-        uri?.let {
-            val inputStream = context.contentResolver.openInputStream(it)
-            if (inputStream != null) {
-                viewModel.loadGpxFile(inputStream, it.toString())
-            }
-        }
+        uri?.let { viewModel.loadGpxFile(it) }
     }
 
     // Navigate to session when route is analyzed and ready
@@ -253,12 +246,8 @@ fun HomeScreen(
                         RecentRouteItem(
                             routeUri = routeUri,
                             onClick = {
-                                val uri = Uri.parse(routeUri)
                                 try {
-                                    val inputStream = context.contentResolver.openInputStream(uri)
-                                    if (inputStream != null) {
-                                        viewModel.loadGpxFile(inputStream, routeUri)
-                                    }
+                                    viewModel.loadGpxFile(Uri.parse(routeUri))
                                 } catch (e: Exception) {
                                     // URI may no longer be accessible
                                 }

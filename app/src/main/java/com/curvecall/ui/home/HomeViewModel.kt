@@ -1,5 +1,6 @@
 package com.curvecall.ui.home
 
+import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -14,13 +15,13 @@ import com.curvecall.engine.types.AnalysisConfig
 import com.curvecall.engine.types.LatLon
 import com.curvecall.engine.types.RouteSegment
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import java.io.InputStream
 import javax.inject.Inject
 
 /**
@@ -31,6 +32,7 @@ import javax.inject.Inject
  */
 @HiltViewModel
 class HomeViewModel @Inject constructor(
+    @ApplicationContext private val appContext: Context,
     private val gpxParser: GpxParser,
     private val routeAnalyzer: RouteAnalyzer,
     private val overpassClient: OverpassClient,
@@ -74,13 +76,13 @@ class HomeViewModel @Inject constructor(
     /**
      * Handle a GPX file selected by the user via the file picker.
      *
-     * Parses the GPX, runs the route analysis engine, optionally fetches
-     * surface data for motorcycle mode, and prepares the session.
+     * Opens the InputStream from the URI on the background thread (not the UI thread)
+     * to avoid lifecycle issues. Parses the GPX, runs the route analysis engine,
+     * optionally fetches surface data for motorcycle mode, and prepares the session.
      *
-     * @param inputStream The content of the selected GPX file
-     * @param uri The URI string of the file for recent routes storage
+     * @param uri The URI of the selected GPX file
      */
-    fun loadGpxFile(inputStream: InputStream, uri: String) {
+    fun loadGpxFile(uri: Uri) {
         viewModelScope.launch(Dispatchers.Default) {
             _uiState.value = _uiState.value.copy(
                 isLoading = true,
@@ -91,13 +93,19 @@ class HomeViewModel @Inject constructor(
             )
 
             try {
-                // Step 1: Parse GPX
-                val gpxResult = gpxParser.parse(inputStream)
+                // Step 1: Open InputStream from URI using application context (thread-safe)
+                val inputStream = appContext.contentResolver.openInputStream(uri)
+                    ?: throw GpxParseException("Could not open file. The file may have been moved or deleted.")
 
-                if (gpxResult.points.size < 2) {
+                // Step 2: Parse GPX (closes stream automatically via use{})
+                val gpxResult = inputStream.use { stream ->
+                    gpxParser.parse(stream)
+                }
+
+                if (gpxResult.points.size < 3) {
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        errorMessage = "GPX file must contain at least 2 points."
+                        errorMessage = "GPX file must contain at least 3 track points for curve analysis."
                     )
                     return@launch
                 }
@@ -145,7 +153,7 @@ class HomeViewModel @Inject constructor(
                 )
 
                 // Step 6: Save to recent routes
-                userPreferences.addRecentRoute(uri)
+                userPreferences.addRecentRoute(uri.toString())
 
                 // Ready for session
                 _uiState.value = _uiState.value.copy(
@@ -154,6 +162,11 @@ class HomeViewModel @Inject constructor(
                     loadingMessage = ""
                 )
 
+            } catch (e: SecurityException) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    errorMessage = "Permission denied. Please select the file again."
+                )
             } catch (e: GpxParseException) {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,

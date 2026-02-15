@@ -11,6 +11,7 @@ import com.google.android.gms.location.Priority
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 
 /**
@@ -85,8 +86,7 @@ class LocationProvider @Inject constructor(
     @SuppressLint("MissingPermission")
     suspend fun getLastLocation(): Location? {
         return try {
-            val task = fusedLocationClient.lastLocation
-            kotlinx.coroutines.tasks.await(task)
+            fusedLocationClient.lastLocation.await()
         } catch (e: Exception) {
             null
         }

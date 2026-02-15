@@ -247,7 +247,7 @@ fun SessionScreen(
             if (uiState.routeProgressPercent > 0f) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     LinearProgressIndicator(
-                        progress = { uiState.routeProgressPercent / 100f },
+                        progress = uiState.routeProgressPercent / 100f,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(4.dp)
@@ -273,7 +273,7 @@ fun SessionScreen(
                 usesMph = uiState.usesMph
             )
 
-            Spacer(modifier = Modifier.weight(1f))
+            Spacer(modifier = Modifier.height(16.dp))
 
             // Controls: Play/Pause, Mute, Stop
             SessionControls(

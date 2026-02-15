@@ -64,14 +64,8 @@ class RouteAnalyzer {
      * @return Full [AnalysisResult] including segments, interpolated points, and quality info.
      */
     fun analyzeRouteDetailed(points: List<LatLon>, config: AnalysisConfig = AnalysisConfig()): AnalysisResult {
-        if (points.size < 3) {
-            return AnalysisResult(
-                segments = emptyList(),
-                interpolatedPoints = points,
-                sparseRegions = emptyList(),
-                totalDistance = if (points.size == 2) GeoMath.haversineDistance(points[0], points[1]) else 0.0,
-                curveCount = 0
-            )
+        require(points.size >= 3) {
+            "Route must contain at least 3 points, but had ${points.size}"
         }
 
         // Stage 1: Interpolation - resample to uniform spacing

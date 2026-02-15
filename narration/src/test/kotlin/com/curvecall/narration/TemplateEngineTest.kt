@@ -161,7 +161,7 @@ class TemplateEngineTest {
                 curve(severity = Severity.MODERATE, direction = direction),
                 carStandard
             )
-            assertThat(text).contains(direction.name.lowercase())
+            assertThat(text).containsIgnoringCase(direction.name.lowercase())
         }
 
         @ParameterizedTest

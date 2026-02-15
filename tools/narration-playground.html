@@ -1,0 +1,919 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CurveCall Narration Playground</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root {
+    --bg: #0f1117; --surface: #1a1d27; --surface2: #232733;
+    --border: #2e3345; --text: #e1e4ed; --text-muted: #8b90a0;
+    --accent: #6c8cff; --accent-dim: #3d5199;
+    --green: #4ade80; --orange: #fb923c; --red: #f87171;
+    --yellow: #facc15; --radius: 8px;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'SF Mono','Cascadia Code','Fira Code',monospace; background:var(--bg); color:var(--text); line-height:1.5; }
+
+  /* Layout */
+  .app { display:grid; grid-template-rows:auto 1fr; height:100vh; }
+  header { background:var(--surface); border-bottom:1px solid var(--border); padding:10px 20px; display:flex; align-items:center; justify-content:space-between; z-index:100; }
+  header h1 { font-size:15px; font-weight:600; }
+  header h1 span { color:var(--accent); }
+  .header-actions { display:flex; gap:6px; align-items:center; }
+
+  .main { display:grid; grid-template-columns:280px 1fr 340px; overflow:hidden; }
+
+  /* Sidebar */
+  .sidebar { background:var(--surface); border-right:1px solid var(--border); padding:12px; overflow-y:auto; }
+  .sidebar h2 { font-size:10px; text-transform:uppercase; letter-spacing:1.5px; color:var(--text-muted); margin:16px 0 8px; }
+  .sidebar h2:first-child { margin-top:4px; }
+  .control-group { margin-bottom:12px; }
+  .control-group label { display:block; font-size:11px; color:var(--text-muted); margin-bottom:2px; }
+  select, input[type="number"], input[type="file"] { width:100%; background:var(--surface2); border:1px solid var(--border); color:var(--text); padding:6px 8px; border-radius:var(--radius); font-family:inherit; font-size:12px; outline:none; }
+  select:focus, input:focus { border-color:var(--accent); }
+  .toggle-row { display:flex; align-items:center; justify-content:space-between; padding:4px 0; }
+  .toggle-row span { font-size:11px; color:var(--text-muted); }
+  .toggle { position:relative; width:32px; height:18px; cursor:pointer; }
+  .toggle input { opacity:0; width:0; height:0; }
+  .toggle .sl { position:absolute; inset:0; background:var(--surface2); border-radius:9px; border:1px solid var(--border); transition:.2s; }
+  .toggle .sl::before { content:''; position:absolute; width:12px; height:12px; left:2px; top:2px; background:var(--text-muted); border-radius:50%; transition:.2s; }
+  .toggle input:checked+.sl { background:var(--accent-dim); border-color:var(--accent); }
+  .toggle input:checked+.sl::before { transform:translateX(14px); background:var(--accent); }
+
+  /* Center: Map */
+  .center { display:flex; flex-direction:column; overflow:hidden; }
+  #map { flex:1; background:#111; }
+  .map-overlay { position:absolute; bottom:20px; left:50%; transform:translateX(-50%); z-index:1000; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:8px 16px; display:flex; gap:10px; align-items:center; }
+  .narration-display { position:absolute; top:16px; left:50%; transform:translateX(-50%); z-index:1000; background:rgba(15,17,23,0.92); border:1px solid var(--accent); border-radius:var(--radius); padding:10px 20px; font-size:16px; font-weight:600; max-width:600px; text-align:center; display:none; }
+  .narration-display.active { display:block; }
+  .speed-display { font-size:11px; color:var(--text-muted); }
+  .speed-display strong { color:var(--text); font-size:14px; }
+
+  /* Right panel: Segment list */
+  .right-panel { background:var(--surface); border-left:1px solid var(--border); overflow-y:auto; padding:12px; }
+  .right-panel h2 { font-size:10px; text-transform:uppercase; letter-spacing:1.5px; color:var(--text-muted); margin-bottom:8px; }
+
+  .seg-card { background:var(--surface2); border:1px solid var(--border); border-radius:6px; margin-bottom:4px; padding:8px 10px; font-size:11px; cursor:pointer; transition:border-color .15s; }
+  .seg-card:hover { border-color:var(--accent-dim); }
+  .seg-card.active { border-color:var(--green); background:rgba(74,222,128,0.08); }
+  .seg-card.upcoming { border-color:var(--accent); }
+  .seg-card .seg-badge { font-size:9px; font-weight:700; text-transform:uppercase; padding:1px 6px; border-radius:3px; display:inline-block; margin-right:6px; }
+  .seg-card .seg-narration { color:var(--text); font-weight:500; }
+  .seg-card .seg-meta { color:var(--text-muted); font-size:10px; margin-top:2px; }
+
+  .severity-gentle { background:#1a3a2a; color:var(--green); }
+  .severity-moderate { background:#2a3520; color:var(--yellow); }
+  .severity-firm { background:#3a2a10; color:var(--orange); }
+  .severity-sharp { background:#3a1a1a; color:var(--red); }
+  .severity-hairpin { background:#3a1030; color:#f472b6; }
+  .severity-warning { background:#2a2510; color:var(--yellow); }
+  .severity-straight { background:#1a2530; color:#67e8f9; }
+
+  /* Buttons */
+  .btn { background:var(--accent-dim); color:var(--text); border:1px solid var(--accent); padding:5px 12px; border-radius:var(--radius); font-family:inherit; font-size:11px; cursor:pointer; transition:.15s; white-space:nowrap; }
+  .btn:hover { background:var(--accent); color:#fff; }
+  .btn:disabled { opacity:0.4; cursor:default; }
+  .btn-ghost { background:transparent; border-color:var(--border); color:var(--text-muted); }
+  .btn-ghost:hover { border-color:var(--accent-dim); color:var(--text); }
+  .btn-green { background:#1a4a2a; border-color:var(--green); color:var(--green); }
+  .btn-green:hover { background:var(--green); color:#000; }
+  .btn-red { background:#3a1a1a; border-color:var(--red); color:var(--red); }
+  .btn-red:hover { background:var(--red); color:#000; }
+
+  /* Playback bar */
+  .playback-bar { background:var(--surface); border-top:1px solid var(--border); padding:8px 16px; display:flex; gap:10px; align-items:center; }
+  .playback-bar .progress-wrap { flex:1; height:6px; background:var(--surface2); border-radius:3px; cursor:pointer; position:relative; }
+  .playback-bar .progress-fill { height:100%; background:var(--accent); border-radius:3px; width:0; transition:width .1s linear; }
+  .playback-bar .time { font-size:10px; color:var(--text-muted); min-width:80px; }
+
+  /* Drop zone */
+  .drop-zone { border:2px dashed var(--border); border-radius:var(--radius); padding:30px; text-align:center; color:var(--text-muted); font-size:12px; cursor:pointer; transition:.2s; margin:8px 0; }
+  .drop-zone:hover, .drop-zone.dragover { border-color:var(--accent); color:var(--text); }
+  .drop-zone input { display:none; }
+
+  .range-row { display:flex; align-items:center; gap:6px; }
+  .range-row input[type="range"] { flex:1; accent-color:var(--accent); }
+  .range-row span { font-size:10px; color:var(--text-muted); min-width:35px; text-align:right; }
+
+  .stats-row { display:flex; gap:12px; font-size:10px; color:var(--text-muted); padding:6px 0; border-bottom:1px solid var(--border); margin-bottom:8px; }
+  .stats-row strong { color:var(--text); }
+
+  .empty-state { text-align:center; padding:60px 20px; color:var(--text-muted); font-size:13px; }
+  .empty-state p { margin-top:8px; font-size:11px; }
+</style>
+</head>
+<body>
+<div class="app">
+<header>
+  <h1><span>CurveCall</span> Narration Playground</h1>
+  <div class="header-actions">
+    <span id="routeInfo" style="font-size:11px;color:var(--text-muted);margin-right:8px;"></span>
+    <button class="btn btn-ghost" id="btnExport" onclick="exportNarrations()" disabled>Export</button>
+  </div>
+</header>
+
+<div class="main">
+  <!-- LEFT: Config sidebar -->
+  <aside class="sidebar">
+    <h2>Load GPX</h2>
+    <div class="drop-zone" id="dropZone" onclick="document.getElementById('gpxInput').click()">
+      Drop GPX file here or click to browse
+      <input type="file" id="gpxInput" accept=".gpx">
+    </div>
+
+    <h2>Narration Config</h2>
+    <div class="control-group">
+      <label>Driving Mode</label>
+      <select id="mode" onchange="reanalyze()">
+        <option value="CAR">Car</option>
+        <option value="MOTORCYCLE">Motorcycle</option>
+      </select>
+    </div>
+    <div class="control-group">
+      <label>Verbosity</label>
+      <select id="verbosity" onchange="renarrate()">
+        <option value="1">1 — Minimal</option>
+        <option value="2" selected>2 — Standard</option>
+        <option value="3">3 — Detailed</option>
+      </select>
+    </div>
+    <div class="control-group">
+      <label>Speed Units</label>
+      <select id="units" onchange="renarrate()">
+        <option value="KMH">km/h</option>
+        <option value="MPH">mph</option>
+      </select>
+    </div>
+    <div class="control-group">
+      <div class="toggle-row"><span>Narrate Straights</span><label class="toggle"><input type="checkbox" id="narrateStraights" onchange="renarrate()"><span class="sl"></span></label></div>
+      <div class="toggle-row"><span>Lean Angle (moto)</span><label class="toggle"><input type="checkbox" id="narrateLeanAngle" checked onchange="renarrate()"><span class="sl"></span></label></div>
+    </div>
+
+    <h2>Playback</h2>
+    <div class="control-group">
+      <label>Simulation Speed</label>
+      <div class="range-row">
+        <input type="range" id="simSpeed" min="20" max="200" step="5" value="80">
+        <span id="simSpeedLabel">80 km/h</span>
+      </div>
+    </div>
+    <div class="control-group">
+      <label>TTS Rate</label>
+      <div class="range-row">
+        <input type="range" id="ttsRate" min="0.5" max="2" step="0.1" value="1.0">
+        <span id="ttsRateLabel">1.0x</span>
+      </div>
+    </div>
+    <div class="control-group">
+      <label>Look-Ahead (seconds)</label>
+      <div class="range-row">
+        <input type="range" id="lookAhead" min="3" max="15" step="0.5" value="8">
+        <span id="lookAheadLabel">8.0s</span>
+      </div>
+    </div>
+
+    <h2>Analysis Tuning</h2>
+    <div class="control-group">
+      <label>Interpolation Spacing (m)</label>
+      <div class="range-row">
+        <input type="range" id="interpSpacing" min="5" max="25" step="1" value="10">
+        <span id="interpSpacingLabel">10m</span>
+      </div>
+    </div>
+    <div class="control-group">
+      <label>Smoothing Window</label>
+      <div class="range-row">
+        <input type="range" id="smoothWindow" min="1" max="15" step="2" value="7">
+        <span id="smoothWindowLabel">7</span>
+      </div>
+    </div>
+    <div class="control-group">
+      <label>Curvature Threshold (m)</label>
+      <div class="range-row">
+        <input type="range" id="curvThresh" min="100" max="1000" step="50" value="500">
+        <span id="curvThreshLabel">500m</span>
+      </div>
+    </div>
+    <div class="control-group">
+      <label>Lateral G</label>
+      <div class="range-row">
+        <input type="range" id="lateralG" min="0.15" max="0.50" step="0.05" value="0.35">
+        <span id="lateralGLabel">0.35</span>
+      </div>
+    </div>
+
+    <div style="margin-top:12px;">
+      <button class="btn" onclick="reanalyze()" style="width:100%">Re-Analyze Route</button>
+    </div>
+  </aside>
+
+  <!-- CENTER: Map -->
+  <div class="center" style="position:relative;">
+    <div id="map"></div>
+    <div class="narration-display" id="narrationDisplay"></div>
+    <div class="playback-bar" id="playbackBar">
+      <button class="btn btn-green" id="btnPlay" onclick="togglePlayback()" disabled>Play</button>
+      <button class="btn btn-ghost" id="btnReset" onclick="resetPlayback()" disabled>Reset</button>
+      <div class="progress-wrap" id="progressWrap" onclick="seekPlayback(event)">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+      <div class="time" id="timeDisplay">0m / 0m</div>
+      <div class="speed-display">
+        <strong id="currentSpeedDisplay">0</strong> km/h
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: Segment list -->
+  <div class="right-panel" id="rightPanel">
+    <h2>Route Segments</h2>
+    <div id="segStats" class="stats-row"></div>
+    <div id="segList">
+      <div class="empty-state">
+        Load a GPX file to analyze<p>The full engine pipeline runs in-browser</p>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+// ============================================================================
+// GeoMath — ported from Kotlin
+// ============================================================================
+const EARTH_R = 6371000;
+const DEG = Math.PI / 180;
+
+function haversine(p1, p2) {
+  const la1 = p1.lat*DEG, la2 = p2.lat*DEG;
+  const dLa = (p2.lat-p1.lat)*DEG, dLo = (p2.lon-p1.lon)*DEG;
+  const a = Math.sin(dLa/2)**2 + Math.cos(la1)*Math.cos(la2)*Math.sin(dLo/2)**2;
+  return EARTH_R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function bearing(f, t) {
+  const la1=f.lat*DEG, la2=t.lat*DEG, dLo=(t.lon-f.lon)*DEG;
+  const x = Math.sin(dLo)*Math.cos(la2);
+  const y = Math.cos(la1)*Math.sin(la2) - Math.sin(la1)*Math.cos(la2)*Math.cos(dLo);
+  return (Math.atan2(x,y)/DEG + 360) % 360;
+}
+
+function geoInterp(p1, p2, frac) {
+  if (frac<=0) return p1; if (frac>=1) return p2;
+  const la1=p1.lat*DEG, lo1=p1.lon*DEG, la2=p2.lat*DEG, lo2=p2.lon*DEG;
+  const d = haversine(p1,p2)/EARTH_R;
+  if (d<1e-12) return p1;
+  const a=Math.sin((1-frac)*d)/Math.sin(d), b=Math.sin(frac*d)/Math.sin(d);
+  const x=a*Math.cos(la1)*Math.cos(lo1)+b*Math.cos(la2)*Math.cos(lo2);
+  const y=a*Math.cos(la1)*Math.sin(lo1)+b*Math.cos(la2)*Math.sin(lo2);
+  const z=a*Math.sin(la1)+b*Math.sin(la2);
+  return {lat:Math.atan2(z,Math.sqrt(x*x+y*y))/DEG, lon:Math.atan2(y,x)/DEG};
+}
+
+function bearingDiff(b1, b2) { let d=b2-b1; while(d>180) d-=360; while(d<=-180) d+=360; return d; }
+
+// ============================================================================
+// MengerCurvature
+// ============================================================================
+function mengerRadius(p1, p2, p3) {
+  const a=haversine(p1,p2), b=haversine(p2,p3), c=haversine(p1,p3);
+  const s=(a+b+c)/2;
+  const a2=s*(s-a)*(s-b)*(s-c);
+  if (a2<=0) return 1e15;
+  const area=Math.sqrt(a2);
+  return area<1e-10 ? 1e15 : (a*b*c)/(4*area);
+}
+
+function mengerDir(p1, p2, p3) {
+  const cosLat=Math.cos(p2.lat*DEG);
+  const v1x=(p2.lon-p1.lon)*cosLat*EARTH_R*DEG;
+  const v1y=(p2.lat-p1.lat)*EARTH_R*DEG;
+  const v2x=(p3.lon-p2.lon)*cosLat*EARTH_R*DEG;
+  const v2y=(p3.lat-p2.lat)*EARTH_R*DEG;
+  const cross=v1x*v2y-v1y*v2x;
+  return cross>1e-6?'LEFT':cross<-1e-6?'RIGHT':null;
+}
+
+// ============================================================================
+// Pipeline Stage 1: Interpolator
+// ============================================================================
+function resample(points, spacing) {
+  if (points.length<2) return [...points];
+  const result=[points[0]];
+  let segIdx=0, distAlong=0, remaining=spacing;
+  while (segIdx<points.length-1) {
+    const s=points[segIdx], e=points[segIdx+1];
+    const segLen=haversine(s,e);
+    let pos=distAlong;
+    while (pos+remaining<=segLen) {
+      pos+=remaining;
+      const frac=Math.min(Math.max(pos/segLen,0),1);
+      result.push(geoInterp(s,e,frac));
+      remaining=spacing;
+    }
+    remaining-=(segLen-pos);
+    distAlong=0;
+    segIdx++;
+  }
+  const last=result[result.length-1], orig=points[points.length-1];
+  if (haversine(last,orig)>spacing*0.5) result.push(orig);
+  return result;
+}
+
+// ============================================================================
+// Pipeline Stage 2: CurvatureComputer
+// ============================================================================
+function computeCurvature(points, smoothWin) {
+  const n=points.length;
+  const rawR=new Float64Array(n), dirs=new Array(n).fill(null);
+  for (let i=1;i<n-1;i++) { rawR[i]=mengerRadius(points[i-1],points[i],points[i+1]); dirs[i]=mengerDir(points[i-1],points[i],points[i+1]); }
+  rawR[0]=rawR[1]; rawR[n-1]=rawR[n-2]; dirs[0]=dirs[1]; dirs[n-1]=dirs[n-2];
+  const CAP=10000, capped=new Float64Array(n);
+  for(let i=0;i<n;i++) capped[i]=Math.min(rawR[i],CAP);
+  const smoothed=rollingAvg(capped,smoothWin);
+  return points.map((p,i)=>({radius:smoothed[i],rawRadius:rawR[i],direction:dirs[i],point:p}));
+}
+
+function rollingAvg(vals, win) {
+  if (win<=1) return new Float64Array(vals);
+  const half=Math.floor(win/2), n=vals.length, r=new Float64Array(n);
+  for (let i=0;i<n;i++) { const lo=Math.max(0,i-half), hi=Math.min(n-1,i+half); let s=0; for(let j=lo;j<=hi;j++) s+=vals[j]; r[i]=s/(hi-lo+1); }
+  return r;
+}
+
+// ============================================================================
+// Pipeline Stage 3: Segmenter
+// ============================================================================
+function segment(curvPts, points, cfg) {
+  const n=curvPts.length;
+  const isCurve=new Uint8Array(n);
+  for(let i=0;i<n;i++) isCurve[i]=curvPts[i].radius<cfg.curvatureThresholdRadius?1:0;
+  // Build initial segments
+  let segs=[];
+  let start=0, curType=isCurve[0];
+  for(let i=1;i<n;i++) { if(isCurve[i]!==curType) { segs.push({si:start,ei:i-1,isCurve:!!curType}); start=i; curType=isCurve[i]; } }
+  segs.push({si:start,ei:n-1,isCurve:!!curType});
+  // Merge short gaps
+  let merged=[];
+  for(let i=0;i<segs.length;i++) {
+    const cur=segs[i];
+    if (!cur.isCurve && merged.length>0 && merged[merged.length-1].isCurve && i+1<segs.length && segs[i+1].isCurve) {
+      let gap=0; for(let j=cur.si;j<cur.ei;j++) gap+=haversine(points[j],points[j+1]);
+      if (gap<cfg.straightGapMerge) { const prev=merged.pop(); merged.push({si:prev.si,ei:segs[i+1].ei,isCurve:true}); i++; continue; }
+    }
+    merged.push(cur);
+  }
+  return merged;
+}
+
+// ============================================================================
+// Pipeline Stage 4: Classifier
+// ============================================================================
+const SEV_THRESHOLDS={gentle:200,moderate:100,firm:50,sharp:25};
+
+function classifySev(r) { return r>SEV_THRESHOLDS.gentle?'GENTLE':r>SEV_THRESHOLDS.moderate?'MODERATE':r>SEV_THRESHOLDS.firm?'FIRM':r>SEV_THRESHOLDS.sharp?'SHARP':'HAIRPIN'; }
+
+function classify(raw, curvPts, points, cfg, distFromStart) {
+  const si=raw.si, ei=raw.ei;
+  let leftC=0,rightC=0;
+  for(let i=si;i<=ei;i++) { if(curvPts[i].direction==='LEFT') leftC++; else if(curvPts[i].direction==='RIGHT') rightC++; }
+  const direction=leftC>=rightC?'LEFT':'RIGHT';
+  let minR=1e15; for(let i=si;i<=ei;i++) if(curvPts[i].radius<minR) minR=curvPts[i].radius;
+  const severity=classifySev(minR);
+  let arcLen=0; for(let i=si;i<ei;i++) arcLen+=haversine(points[i],points[i+1]);
+  // Modifiers
+  const mods=[];
+  const count=ei-si+1;
+  if (count>=3) {
+    const ts=Math.floor(count/3);
+    if (ts>=1) {
+      let s1=0,c1=0,s2=0,c2=0;
+      for(let i=si;i<si+ts;i++){s1+=Math.min(curvPts[i].radius,10000);c1++;}
+      for(let i=ei-ts+1;i<=ei;i++){s2+=Math.min(curvPts[i].radius,10000);c2++;}
+      const avg1=s1/c1,avg2=s2/c2;
+      if(avg2<avg1*0.8) mods.push('TIGHTENING');
+      else if(avg2>avg1*1.2) mods.push('OPENING');
+    }
+  }
+  if(arcLen>200){ mods.push('LONG'); if(!mods.includes('TIGHTENING')&&!mods.includes('OPENING')) mods.push('HOLDS'); }
+  // Angle change
+  let angleChange=0;
+  if(ei-si>=1) {
+    const entB=bearing(points[si],points[Math.min(si+1,ei)]);
+    const exB=bearing(points[Math.max(ei-1,si)],points[ei]);
+    angleChange=Math.abs(bearingDiff(entB,exB));
+  }
+  const is90=angleChange>=85&&angleChange<=95&&arcLen<50;
+  return { type:'curve', direction, severity, minRadius:minR, arcLength:arcLen, modifiers:mods, totalAngleChange:angleChange, is90Degree:is90,
+    advisorySpeedMs:null, leanAngleDeg:null, compoundType:null, compoundSize:null, confidence:1.0,
+    startIndex:si, endIndex:ei, startPoint:points[si], endPoint:points[ei], distanceFromStart:distFromStart };
+}
+
+// ============================================================================
+// Pipeline Stage 5: SpeedAdvisor
+// ============================================================================
+function calcSpeedMs(radius, latG) { return Math.sqrt(radius * latG * 9.81); }
+function needsAdvisory(sev, speedMs) {
+  if(sev==='GENTLE') return false;
+  if(sev==='MODERATE') return speedMs*3.6<70;
+  return true;
+}
+function applyAdvisory(curve, cfg) {
+  const s=calcSpeedMs(curve.minRadius, cfg.lateralG);
+  if(needsAdvisory(curve.severity, s)) return {...curve, advisorySpeedMs:s};
+  return curve;
+}
+
+// ============================================================================
+// Pipeline Stage 6: LeanAngleCalculator
+// ============================================================================
+function calcLean(speedMs, radius) {
+  if(speedMs<=0) return null;
+  const exact=Math.atan(speedMs*speedMs/(radius*9.81))/DEG;
+  const rounded=Math.round(exact/5)*5;
+  return Math.min(rounded,45);
+}
+function applyLean(curve, isMoto) {
+  if(!isMoto||curve.advisorySpeedMs==null) return curve;
+  return {...curve, leanAngleDeg:calcLean(curve.advisorySpeedMs,curve.minRadius)};
+}
+
+// ============================================================================
+// Pipeline Stage 7: CompoundDetector
+// ============================================================================
+function sevOrd(s){return['GENTLE','MODERATE','FIRM','SHARP','HAIRPIN'].indexOf(s);}
+function detectCompounds(segments, cfg) {
+  const curves=segments.filter(s=>s.type==='curve');
+  if(curves.length<2) return segments;
+  const updates=new Map();
+  // Series: 3+ curves linked
+  let rs=0;
+  while(rs<curves.length){
+    let re=rs;
+    while(re<curves.length-1){
+      const gap=curves[re+1].distanceFromStart-(curves[re].distanceFromStart+curves[re].arcLength);
+      if(gap<cfg.straightGapMerge) re++; else break;
+    }
+    if(re-rs+1>=3) for(let i=rs;i<=re;i++) if(!updates.has(curves[i].startIndex)) updates.set(curves[i].startIndex,{t:'SERIES',n:re-rs+1});
+    rs=re+1;
+  }
+  // S-bends/chicanes
+  for(let i=0;i<curves.length-1;i++){
+    const a=curves[i],b=curves[i+1];
+    if(updates.has(a.startIndex)||updates.has(b.startIndex)) continue;
+    const gap=b.distanceFromStart-(a.distanceFromStart+a.arcLength);
+    if(gap>=cfg.straightGapMerge||a.direction===b.direction) continue;
+    const isChicane=sevOrd(a.severity)>=3&&sevOrd(b.severity)>=3;
+    const t=isChicane?'CHICANE':'S_BEND';
+    updates.set(a.startIndex,{t,n:2}); updates.set(b.startIndex,{t,n:2});
+  }
+  // Tightening sequences
+  let ts=0;
+  while(ts<curves.length-1){
+    if(updates.has(curves[ts].startIndex)){ts++;continue;}
+    let te=ts;
+    while(te<curves.length-1){
+      const c=curves[te],nx=curves[te+1];
+      if(c.direction!==nx.direction) break;
+      const gap=nx.distanceFromStart-(c.distanceFromStart+c.arcLength);
+      if(gap>=cfg.straightGapMerge) break;
+      if(nx.minRadius>=c.minRadius) break;
+      if(updates.has(nx.startIndex)) break;
+      te++;
+    }
+    if(te-ts+1>=2) for(let i=ts;i<=te;i++) updates.set(curves[i].startIndex,{t:'TIGHTENING_SEQUENCE',n:te-ts+1});
+    ts=te+1;
+  }
+  return segments.map(s=>{
+    if(s.type!=='curve') return s;
+    const u=updates.get(s.startIndex);
+    return u?{...s,compoundType:u.t,compoundSize:u.n}:s;
+  });
+}
+
+// ============================================================================
+// Pipeline Stage 8: DataQualityChecker
+// ============================================================================
+function detectSparse(origPoints, cfg) {
+  if(origPoints.length<3) return [];
+  const regions=[]; let cum=0;
+  for(let i=0;i<origPoints.length-1;i++){
+    const sp=haversine(origPoints[i],origPoints[i+1]);
+    const prev=cum;
+    if(sp>cfg.sparseNodeThreshold){
+      let bc=0;
+      if(i>0&&i+2<origPoints.length){ bc=Math.abs(bearingDiff(bearing(origPoints[i-1],origPoints[i]),bearing(origPoints[i+1],origPoints[i+2]))); }
+      else if(i+1<origPoints.length-1){ bc=Math.abs(bearingDiff(bearing(origPoints[i],origPoints[i+1]),bearing(origPoints[i+1],origPoints[i+2]))); }
+      if(bc>10) regions.push({startDist:prev,endDist:prev+sp,maxSp:sp,bc});
+    }
+    cum+=sp;
+  }
+  return regions;
+}
+
+function applyConfidence(segments, sparse) {
+  if(!sparse.length) return segments;
+  return segments.map(s=>{
+    if(s.type!=='curve') return s;
+    const cs=s.distanceFromStart, ce=cs+s.arcLength;
+    let mc=1;
+    for(const r of sparse){
+      const os=Math.max(cs,r.startDist), oe=Math.min(ce,r.endDist);
+      if(os<oe){ const frac=(oe-os)/(ce-cs||1); mc=Math.min(mc,frac>0.8?0.3:0.6); }
+    }
+    return mc<1?{...s,confidence:mc}:s;
+  });
+}
+
+// ============================================================================
+// Full Pipeline: RouteAnalyzer
+// ============================================================================
+function analyzeRoute(origPoints, cfg) {
+  if(origPoints.length<3) return {segments:[],interpPoints:[],totalDist:0};
+  const interp=resample(origPoints,cfg.interpolationSpacing);
+  if(interp.length<3) return {segments:[],interpPoints:interp,totalDist:0};
+  const curvPts=computeCurvature(interp,cfg.smoothingWindow);
+  const rawSegs=segment(curvPts,interp,cfg);
+  // Cumulative distances
+  const cumDist=new Float64Array(interp.length);
+  for(let i=1;i<interp.length;i++) cumDist[i]=cumDist[i-1]+haversine(interp[i-1],interp[i]);
+  // Classify
+  let classified=rawSegs.map(raw=>{
+    const dist=cumDist[raw.si];
+    if(raw.isCurve){
+      let c=classify(raw,curvPts,interp,cfg,dist);
+      c=applyAdvisory(c,cfg);
+      c=applyLean(c,cfg.isMotorcycleMode);
+      return c;
+    } else {
+      let len=0; for(let i=raw.si;i<raw.ei;i++) len+=haversine(interp[i],interp[i+1]);
+      return {type:'straight',length:len,startIndex:raw.si,endIndex:raw.ei,distanceFromStart:dist};
+    }
+  });
+  classified=detectCompounds(classified,cfg);
+  const sparse=detectSparse(origPoints,cfg);
+  classified=applyConfidence(classified,sparse);
+  return {segments:classified, interpPoints:interp, totalDist:cumDist[interp.length-1]||0, cumDist};
+}
+
+// ============================================================================
+// TemplateEngine — ported from Kotlin (same as before)
+// ============================================================================
+const MS_TO_KMH=3.6, MS_TO_MPH=2.23694, EXTREME_LEAN=45, LOW_CONF=0.3;
+const SPARSE_WARN="Low data quality ahead, curve information may be incomplete";
+
+function getConfig(){
+  const mode=document.getElementById('mode').value;
+  return { mode, verbosity:+document.getElementById('verbosity').value, units:document.getElementById('units').value,
+    narrateStraights:document.getElementById('narrateStraights').checked, narrateLeanAngle:document.getElementById('narrateLeanAngle').checked };
+}
+function getAnalysisCfg(){
+  const mode=document.getElementById('mode').value;
+  return { interpolationSpacing:+document.getElementById('interpSpacing').value, smoothingWindow:+document.getElementById('smoothWindow').value,
+    curvatureThresholdRadius:+document.getElementById('curvThresh').value, straightGapMerge:50,
+    lateralG:+document.getElementById('lateralG').value, isMotorcycleMode:mode==='MOTORCYCLE', sparseNodeThreshold:100 };
+}
+
+function shouldNarrate(c,cfg){ if(c.modifiers.includes('TIGHTENING')) return true; const v=cfg.verbosity; if(v===1) return c.severity==='SHARP'||c.severity==='HAIRPIN'; if(v===2) return sevOrd(c.severity)>=1; return true; }
+function genNarration(c,cfg){ if(!shouldNarrate(c,cfg)) return null; if(c.confidence<LOW_CONF) return SPARSE_WARN; switch(c.compoundType){ case'S_BEND':return genSBend(c,cfg); case'CHICANE':return genChicane(c,cfg); case'SERIES':return genSeries(c,cfg); case'TIGHTENING_SEQUENCE':return genTightSeq(c,cfg); default:return genSingle(c,cfg); } }
+function genStraight(s,cfg){ if(cfg.verbosity<3||!cfg.narrateStraights) return null; return `Straight, ${Math.round(s.length/10)*10} meters`; }
+
+function genSingle(c,cfg){ const p=[]; const caution=cfg.mode==='MOTORCYCLE'&&c.modifiers.includes('TIGHTENING'); const base=c.severity==='HAIRPIN'?bHairpin(c,cfg):c.is90Degree?b90(c,cfg):bStd(c,cfg); if(caution)p.push('Caution'); p.push(base); return p.join(', '); }
+function bHairpin(c,cfg){ const p=[`Hairpin ${dt(c.direction)} ahead`]; if(c.modifiers.includes('TIGHTENING'))p.push('tightening'); const s=fmtSpd(c.advisorySpeedMs,cfg); if(s)p.push(s); const l=fmtLean(c.leanAngleDeg,cfg); if(l)p.push(l); return p.join(', '); }
+function b90(c,cfg){ const p=[`90 degree ${dt(c.direction)} ahead`]; const s=fmtSpd(c.advisorySpeedMs,cfg); if(s)p.push(s); const l=fmtLean(c.leanAngleDeg,cfg); if(l)p.push(l); return p.join(', '); }
+function bStd(c,cfg){ const p=[],sv=st(c.severity),d=dt(c.direction); if(c.modifiers.includes('LONG')&&cfg.verbosity>=2)p.push(`Long ${sv} ${d}`); else if(c.severity==='SHARP')p.push(`Sharp ${d} ahead`); else{p.push(`${d[0].toUpperCase()+d.slice(1)} curve ahead`);p.push(sv);} if(c.modifiers.includes('TIGHTENING'))p.push('tightening'); if(c.modifiers.includes('OPENING')&&cfg.verbosity>=2)p.push('opening'); if(c.modifiers.includes('HOLDS')&&cfg.verbosity>=2)p.push(`holds for ${Math.round(c.arcLength/10)*10} meters`); const s=fmtSpd(c.advisorySpeedMs,cfg);if(s)p.push(s); const l=fmtLean(c.leanAngleDeg,cfg);if(l)p.push(l); return p.join(', '); }
+function genSBend(c,cfg){ const p=[]; if(cfg.mode==='MOTORCYCLE'&&c.modifiers.includes('TIGHTENING'))p.push('Caution'); const d1=dt(c.direction),d2=dt(c.direction==='LEFT'?'RIGHT':'LEFT'); p.push(p.length===0?`${d1[0].toUpperCase()+d1.slice(1)} into ${d2}`:`${d1} into ${d2}`); p.push('S-bend'); p.push(st(c.severity)); const s=fmtSpd(c.advisorySpeedMs,cfg);if(s)p.push(s); const l=fmtLean(c.leanAngleDeg,cfg);if(l)p.push(l); return p.join(', '); }
+function genChicane(c,cfg){ const p=[]; if(cfg.mode==='MOTORCYCLE'&&c.modifiers.includes('TIGHTENING'))p.push('Caution'); p.push('Chicane'); p.push(`${dt(c.direction)}-${dt(c.direction==='LEFT'?'RIGHT':'LEFT')}`); const s=fmtSpd(c.advisorySpeedMs,cfg);if(s)p.push(s); const l=fmtLean(c.leanAngleDeg,cfg);if(l)p.push(l); return p.join(', '); }
+function genSeries(c,cfg){ const p=[]; if(cfg.mode==='MOTORCYCLE'&&c.modifiers.includes('TIGHTENING'))p.push('Caution'); p.push(`Series of ${c.compoundSize||3} curves`); p.push(st(c.severity)); const s=fmtSpd(c.advisorySpeedMs,cfg);if(s)p.push(s); return p.join(', '); }
+function genTightSeq(c,cfg){ const p=[]; if(cfg.mode==='MOTORCYCLE')p.push('Caution'); p.push(`${dt(c.direction)}, tightening through ${c.compoundSize||2} curves`); const s=fmtSpd(c.advisorySpeedMs,cfg);if(s)p.push(s); const l=fmtLean(c.leanAngleDeg,cfg);if(l)p.push(l); return p.join(', '); }
+function dt(d){return d==='LEFT'?'left':'right';}
+function st(s){return s.toLowerCase();}
+function fmtSpd(ms,cfg){if(ms==null)return null;const v=cfg.units==='KMH'?ms*MS_TO_KMH:ms*MS_TO_MPH;return`slow to ${Math.floor(v/5)*5}`;}
+function fmtLean(a,cfg){if(cfg.mode!=='MOTORCYCLE'||!cfg.narrateLeanAngle||a==null)return null;return a>EXTREME_LEAN?'extreme lean':`lean ${Math.floor(a/5)*5} degrees`;}
+
+// ============================================================================
+// GPX Parser
+// ============================================================================
+function parseGPX(xml) {
+  const parser=new DOMParser();
+  const doc=parser.parseFromString(xml,'text/xml');
+  const pts=[];
+  // Try track points first, then route points
+  let nodes=doc.querySelectorAll('trkpt');
+  if(!nodes.length) nodes=doc.querySelectorAll('rtept');
+  if(!nodes.length) nodes=doc.querySelectorAll('wpt');
+  nodes.forEach(n=>{ const lat=parseFloat(n.getAttribute('lat')), lon=parseFloat(n.getAttribute('lon')); if(!isNaN(lat)&&!isNaN(lon)) pts.push({lat,lon}); });
+  return pts;
+}
+
+// ============================================================================
+// App State
+// ============================================================================
+let map, routeLayer, curveMarkers=[], markerIcon, posMarker;
+let rawPoints=[], analysisResult=null, narrationEvents=[];
+let playing=false, playbackPos=0, playbackAnim=null, lastNarratedIdx=-1;
+const synth=window.speechSynthesis;
+
+// ============================================================================
+// Map Setup
+// ============================================================================
+function initMap() {
+  map=L.map('map',{zoomControl:true}).setView([47.0,10.5],6);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
+    attribution:'&copy; OpenStreetMap &copy; CARTO', maxZoom:19
+  }).addTo(map);
+  routeLayer=L.layerGroup().addTo(map);
+}
+
+function drawRoute(interpPoints, segments) {
+  routeLayer.clearLayers();
+  curveMarkers=[];
+  // Draw full route as polyline
+  const latlngs=interpPoints.map(p=>[p.lat,p.lon]);
+  L.polyline(latlngs,{color:'#555',weight:3,opacity:0.6}).addTo(routeLayer);
+  // Color curve segments
+  const colors={GENTLE:'#4ade80',MODERATE:'#facc15',FIRM:'#fb923c',SHARP:'#f87171',HAIRPIN:'#f472b6'};
+  segments.forEach(seg=>{
+    if(seg.type!=='curve') return;
+    const pts=[];
+    for(let i=seg.startIndex;i<=seg.endIndex;i++) pts.push([interpPoints[i].lat,interpPoints[i].lon]);
+    if(pts.length>=2){
+      const col=colors[seg.severity]||'#6c8cff';
+      L.polyline(pts,{color:col,weight:5,opacity:0.85}).addTo(routeLayer);
+    }
+    // Start marker for curve
+    const m=L.circleMarker([seg.startPoint.lat,seg.startPoint.lon],{radius:4,color:colors[seg.severity]||'#fff',fillColor:colors[seg.severity]||'#fff',fillOpacity:1,weight:1});
+    m.addTo(routeLayer);
+    curveMarkers.push(m);
+  });
+  // Position marker
+  if(posMarker) map.removeLayer(posMarker);
+  if(interpPoints.length){
+    posMarker=L.circleMarker([interpPoints[0].lat,interpPoints[0].lon],{radius:7,color:'#6c8cff',fillColor:'#6c8cff',fillOpacity:1,weight:2,className:'pos-marker'});
+    posMarker.addTo(routeLayer);
+  }
+  // Fit bounds
+  if(latlngs.length) map.fitBounds(L.latLngBounds(latlngs),{padding:[30,30]});
+}
+
+// ============================================================================
+// Segment List Rendering
+// ============================================================================
+function renderSegList() {
+  if(!analysisResult){document.getElementById('segList').innerHTML='<div class="empty-state">Load a GPX file to analyze</div>';return;}
+  const cfg=getConfig();
+  const segs=analysisResult.segments;
+  const curves=segs.filter(s=>s.type==='curve');
+  document.getElementById('segStats').innerHTML=
+    `<span>Segments: <strong>${segs.length}</strong></span><span>Curves: <strong>${curves.length}</strong></span><span>Distance: <strong>${(analysisResult.totalDist/1000).toFixed(1)} km</strong></span>`;
+
+  // Build narration events
+  narrationEvents=[];
+  const html=[];
+  segs.forEach((seg,i)=>{
+    let narr=null, sevClass='straight', badge='STRAIGHT';
+    if(seg.type==='curve'){
+      narr=genNarration(seg,cfg);
+      sevClass=seg.confidence<LOW_CONF?'warning':seg.severity.toLowerCase();
+      badge=seg.compoundType?seg.compoundType.replace('_',' '):seg.is90Degree?'90-DEG':seg.severity;
+    } else {
+      narr=genStraight(seg,cfg);
+      badge='STRAIGHT';
+    }
+    if(narr) narrationEvents.push({idx:i,seg,narr,dist:seg.distanceFromStart});
+    const meta=seg.type==='curve'?
+      `${dt(seg.direction)} r=${Math.round(seg.minRadius)}m arc=${Math.round(seg.arcLength)}m @ ${Math.round(seg.distanceFromStart)}m${seg.modifiers.length?' ['+seg.modifiers.join(',')+']':''}`:
+      `${Math.round(seg.length)}m @ ${Math.round(seg.distanceFromStart)}m`;
+    html.push(`<div class="seg-card" id="seg-${i}" onclick="focusSeg(${i})">
+      <span class="seg-badge severity-${sevClass}">${badge}</span>
+      <span class="seg-narration">${narr||'<span style="color:var(--text-muted);font-style:italic">filtered</span>'}</span>
+      <div class="seg-meta">${meta}</div>
+    </div>`);
+  });
+  document.getElementById('segList').innerHTML=html.join('');
+  document.getElementById('btnPlay').disabled=false;
+  document.getElementById('btnReset').disabled=false;
+  document.getElementById('btnExport').disabled=false;
+  document.getElementById('routeInfo').textContent=`${rawPoints.length} pts → ${analysisResult.interpPoints.length} interp → ${curves.length} curves`;
+}
+
+function focusSeg(i) {
+  const seg=analysisResult.segments[i];
+  if(!seg) return;
+  const pt=seg.type==='curve'?seg.startPoint:analysisResult.interpPoints[seg.startIndex];
+  map.setView([pt.lat,pt.lon],16);
+  // Highlight
+  document.querySelectorAll('.seg-card').forEach(el=>el.classList.remove('active'));
+  document.getElementById(`seg-${i}`)?.classList.add('active');
+  // Speak it
+  const cfg=getConfig();
+  const narr=seg.type==='curve'?genNarration(seg,cfg):genStraight(seg,cfg);
+  if(narr) speak(narr);
+}
+
+// ============================================================================
+// Playback System
+// ============================================================================
+function togglePlayback() {
+  if(playing) pausePlayback();
+  else startPlayback();
+}
+
+function startPlayback() {
+  if(!analysisResult) return;
+  playing=true;
+  document.getElementById('btnPlay').textContent='Pause';
+  document.getElementById('btnPlay').className='btn btn-red';
+  lastTime=performance.now();
+  playbackLoop();
+}
+
+function pausePlayback() {
+  playing=false;
+  document.getElementById('btnPlay').textContent='Play';
+  document.getElementById('btnPlay').className='btn btn-green';
+  if(playbackAnim) cancelAnimationFrame(playbackAnim);
+}
+
+function resetPlayback() {
+  pausePlayback();
+  playbackPos=0;
+  lastNarratedIdx=-1;
+  synth.cancel();
+  updatePlaybackUI();
+  document.getElementById('narrationDisplay').classList.remove('active');
+  document.querySelectorAll('.seg-card').forEach(el=>{el.classList.remove('active');el.classList.remove('upcoming');});
+  if(posMarker&&analysisResult.interpPoints.length) posMarker.setLatLng([analysisResult.interpPoints[0].lat,analysisResult.interpPoints[0].lon]);
+}
+
+let lastTime=0;
+function playbackLoop() {
+  if(!playing) return;
+  const now=performance.now();
+  const dt=(now-lastTime)/1000;
+  lastTime=now;
+  const speedMs=(+document.getElementById('simSpeed').value)/3.6;
+  playbackPos+=speedMs*dt;
+  if(playbackPos>=analysisResult.totalDist){ playbackPos=analysisResult.totalDist; pausePlayback(); }
+  updatePlaybackUI();
+  checkNarration();
+  playbackAnim=requestAnimationFrame(playbackLoop);
+}
+
+function updatePlaybackUI() {
+  if(!analysisResult) return;
+  const total=analysisResult.totalDist;
+  const pct=total>0?(playbackPos/total*100):0;
+  document.getElementById('progressFill').style.width=pct+'%';
+  document.getElementById('timeDisplay').textContent=`${Math.round(playbackPos)}m / ${Math.round(total)}m`;
+  document.getElementById('currentSpeedDisplay').textContent=document.getElementById('simSpeed').value;
+  // Update position marker
+  if(posMarker&&analysisResult.cumDist){
+    const cd=analysisResult.cumDist;
+    let idx=0;
+    for(let i=1;i<cd.length;i++){if(cd[i]>=playbackPos){idx=i-1;break;} if(i===cd.length-1) idx=i;}
+    if(idx<cd.length-1){
+      const frac=(cd[idx+1]-cd[idx])>0?(playbackPos-cd[idx])/(cd[idx+1]-cd[idx]):0;
+      const pt=geoInterp(analysisResult.interpPoints[idx],analysisResult.interpPoints[Math.min(idx+1,analysisResult.interpPoints.length-1)],Math.min(Math.max(frac,0),1));
+      posMarker.setLatLng([pt.lat,pt.lon]);
+    }
+  }
+  // Highlight current/upcoming segments
+  if(analysisResult){
+    document.querySelectorAll('.seg-card').forEach(el=>{el.classList.remove('active');el.classList.remove('upcoming');});
+    const segs=analysisResult.segments;
+    for(let i=0;i<segs.length;i++){
+      const s=segs[i], end=s.distanceFromStart+(s.type==='curve'?s.arcLength:s.length);
+      if(playbackPos>=s.distanceFromStart&&playbackPos<=end) document.getElementById(`seg-${i}`)?.classList.add('active');
+    }
+  }
+}
+
+function checkNarration() {
+  const lookAheadS=+document.getElementById('lookAhead').value;
+  const speedMs=(+document.getElementById('simSpeed').value)/3.6;
+  const lookAheadDist=speedMs*lookAheadS;
+  const triggerPos=playbackPos+lookAheadDist;
+
+  for(let i=0;i<narrationEvents.length;i++){
+    if(i<=lastNarratedIdx) continue;
+    const ev=narrationEvents[i];
+    if(ev.dist<=triggerPos){
+      lastNarratedIdx=i;
+      speak(ev.narr);
+      showNarrationBanner(ev.narr);
+      // Highlight upcoming
+      document.getElementById(`seg-${ev.idx}`)?.classList.add('upcoming');
+      document.getElementById(`seg-${ev.idx}`)?.scrollIntoView({behavior:'smooth',block:'nearest'});
+      break;
+    }
+  }
+}
+
+function showNarrationBanner(text) {
+  const el=document.getElementById('narrationDisplay');
+  el.textContent=text;
+  el.classList.add('active');
+  clearTimeout(el._timer);
+  el._timer=setTimeout(()=>el.classList.remove('active'),4000);
+}
+
+function seekPlayback(e) {
+  if(!analysisResult) return;
+  const rect=e.currentTarget.getBoundingClientRect();
+  const pct=(e.clientX-rect.left)/rect.width;
+  playbackPos=pct*analysisResult.totalDist;
+  // Reset narration tracking to before current position
+  lastNarratedIdx=-1;
+  for(let i=narrationEvents.length-1;i>=0;i--){ if(narrationEvents[i].dist<playbackPos) {lastNarratedIdx=i; break;} }
+  updatePlaybackUI();
+}
+
+function speak(text) {
+  synth.cancel();
+  const u=new SpeechSynthesisUtterance(text);
+  u.rate=+document.getElementById('ttsRate').value;
+  u.lang='en-US';
+  synth.speak(u);
+}
+
+// ============================================================================
+// File Loading
+// ============================================================================
+function loadGPX(text) {
+  rawPoints=parseGPX(text);
+  if(rawPoints.length<3){alert('GPX file needs at least 3 track points');return;}
+  reanalyze();
+}
+
+function reanalyze() {
+  if(rawPoints.length<3) return;
+  pausePlayback();
+  playbackPos=0; lastNarratedIdx=-1;
+  const cfg=getAnalysisCfg();
+  const t0=performance.now();
+  analysisResult=analyzeRoute(rawPoints,cfg);
+  const elapsed=performance.now()-t0;
+  console.log(`Analysis: ${elapsed.toFixed(0)}ms, ${analysisResult.segments.length} segments`);
+  drawRoute(analysisResult.interpPoints,analysisResult.segments);
+  renarrate();
+}
+
+function renarrate() {
+  renderSegList();
+}
+
+// File input
+document.getElementById('gpxInput').addEventListener('change',e=>{
+  const f=e.target.files[0]; if(!f) return;
+  f.text().then(loadGPX);
+});
+// Drag & drop
+const dz=document.getElementById('dropZone');
+dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('dragover');});
+dz.addEventListener('dragleave',()=>dz.classList.remove('dragover'));
+dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('dragover');const f=e.dataTransfer.files[0];if(f)f.text().then(loadGPX);});
+
+// Range inputs
+['simSpeed','ttsRate','lookAhead','interpSpacing','smoothWindow','curvThresh','lateralG'].forEach(id=>{
+  const el=document.getElementById(id);
+  const lbl=document.getElementById(id+'Label');
+  el.addEventListener('input',()=>{
+    const v=parseFloat(el.value);
+    switch(id){
+      case'simSpeed':lbl.textContent=v+' km/h';break;
+      case'ttsRate':lbl.textContent=v.toFixed(1)+'x';break;
+      case'lookAhead':lbl.textContent=v.toFixed(1)+'s';break;
+      case'interpSpacing':lbl.textContent=v+'m';break;
+      case'smoothWindow':lbl.textContent=v;break;
+      case'curvThresh':lbl.textContent=v+'m';break;
+      case'lateralG':lbl.textContent=v.toFixed(2);break;
+    }
+  });
+});
+
+// Export
+function exportNarrations(){
+  if(!analysisResult) return;
+  const cfg=getConfig();
+  const lines=[`# CurveCall Narration Export`,`# Config: ${JSON.stringify(cfg)}`,`# Segments: ${analysisResult.segments.length}`,``];
+  analysisResult.segments.forEach((s,i)=>{
+    const narr=s.type==='curve'?genNarration(s,cfg):genStraight(s,cfg);
+    const meta=s.type==='curve'?`${s.direction} ${s.severity} r=${Math.round(s.minRadius)}m`:`straight ${Math.round(s.length)}m`;
+    lines.push(`${i+1}. [${Math.round(s.distanceFromStart)}m] ${meta}`);
+    lines.push(`   ${narr||'(filtered)'}`);
+  });
+  const blob=new Blob([lines.join('\n')],{type:'text/plain'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='curvecall-narrations.txt'; a.click();
+}
+
+// Init
+initMap();
+
+// Load sample GPX if available via testdata
+</script>
+</body>
+</html>

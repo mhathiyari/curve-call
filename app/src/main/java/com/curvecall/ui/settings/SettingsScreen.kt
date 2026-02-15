@@ -15,6 +15,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -23,11 +25,9 @@ import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
@@ -47,6 +47,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.RowScope
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.curvecall.engine.types.DrivingMode
 import com.curvecall.engine.types.SpeedUnit
@@ -137,70 +138,65 @@ fun SettingsScreen(
 
             // Mode: Car / Motorcycle
             SettingLabel("Driving Mode")
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                SegmentedButton(
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                ChoiceButton(
+                    label = "Car",
                     selected = uiState.drivingMode == DrivingMode.CAR,
-                    onClick = { viewModel.setDrivingMode(DrivingMode.CAR) },
-                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
-                ) {
-                    Text("Car")
-                }
-                SegmentedButton(
+                    onClick = { viewModel.setDrivingMode(DrivingMode.CAR) }
+                )
+                ChoiceButton(
+                    label = "Motorcycle",
                     selected = uiState.drivingMode == DrivingMode.MOTORCYCLE,
-                    onClick = { viewModel.setDrivingMode(DrivingMode.MOTORCYCLE) },
-                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
-                ) {
-                    Text("Motorcycle")
-                }
+                    onClick = { viewModel.setDrivingMode(DrivingMode.MOTORCYCLE) }
+                )
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
             // Units: mph / km/h
             SettingLabel("Speed Units")
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                SegmentedButton(
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                ChoiceButton(
+                    label = "km/h",
                     selected = uiState.speedUnits == SpeedUnit.KMH,
-                    onClick = { viewModel.setSpeedUnits(SpeedUnit.KMH) },
-                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
-                ) {
-                    Text("km/h")
-                }
-                SegmentedButton(
+                    onClick = { viewModel.setSpeedUnits(SpeedUnit.KMH) }
+                )
+                ChoiceButton(
+                    label = "mph",
                     selected = uiState.speedUnits == SpeedUnit.MPH,
-                    onClick = { viewModel.setSpeedUnits(SpeedUnit.MPH) },
-                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
-                ) {
-                    Text("mph")
-                }
+                    onClick = { viewModel.setSpeedUnits(SpeedUnit.MPH) }
+                )
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
             // Verbosity: Minimal / Standard / Detailed
             SettingLabel("Narration Verbosity")
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                SegmentedButton(
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                ChoiceButton(
+                    label = "Minimal",
                     selected = uiState.verbosity == 1,
-                    onClick = { viewModel.setVerbosity(1) },
-                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 3)
-                ) {
-                    Text("Minimal")
-                }
-                SegmentedButton(
+                    onClick = { viewModel.setVerbosity(1) }
+                )
+                ChoiceButton(
+                    label = "Standard",
                     selected = uiState.verbosity == 2,
-                    onClick = { viewModel.setVerbosity(2) },
-                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 3)
-                ) {
-                    Text("Standard")
-                }
-                SegmentedButton(
+                    onClick = { viewModel.setVerbosity(2) }
+                )
+                ChoiceButton(
+                    label = "Detailed",
                     selected = uiState.verbosity == 3,
-                    onClick = { viewModel.setVerbosity(3) },
-                    shape = SegmentedButtonDefaults.itemShape(index = 2, count = 3)
-                ) {
-                    Text("Detailed")
-                }
+                    onClick = { viewModel.setVerbosity(3) }
+                )
             }
 
             SettingDivider()
@@ -466,4 +462,28 @@ private fun SettingDivider() {
         modifier = Modifier.padding(vertical = 20.dp),
         color = MaterialTheme.colorScheme.surfaceVariant
     )
+}
+
+@Composable
+private fun RowScope.ChoiceButton(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    if (selected) {
+        Button(
+            onClick = onClick,
+            modifier = Modifier.weight(1f),
+            colors = ButtonDefaults.buttonColors(containerColor = CurveCallPrimary)
+        ) {
+            Text(label)
+        }
+    } else {
+        OutlinedButton(
+            onClick = onClick,
+            modifier = Modifier.weight(1f)
+        ) {
+            Text(label)
+        }
+    }
 }

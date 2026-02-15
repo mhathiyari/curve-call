@@ -8,10 +8,47 @@
             android:viewportWidth="108"
             android:viewportHeight="108">
             <path
-                android:fillColor="#FFFFFF"
-                android:pathData="M30,54 Q54,20 78,54 T126,54"
-                android:strokeColor="#FFFFFF"
-                android:strokeWidth="4" />
+                android:pathData="M46,22 C62,34 62,44 46,54 C30,64 30,74 46,86"
+                android:strokeColor="#00C853"
+                android:strokeWidth="2.5"
+                android:fillColor="@android:color/transparent"
+                android:strokeLineCap="round" />
+            <path
+                android:pathData="M62,22 C78,34 78,44 62,54 C46,64 46,74 62,86"
+                android:strokeColor="#00C853"
+                android:strokeWidth="2.5"
+                android:fillColor="@android:color/transparent"
+                android:strokeLineCap="round" />
+            <path
+                android:pathData="M54,26 L54,30"
+                android:strokeColor="#00C853"
+                android:strokeWidth="1.5"
+                android:strokeAlpha="0.5"
+                android:strokeLineCap="round" />
+            <path
+                android:pathData="M57,36 L58,40"
+                android:strokeColor="#00C853"
+                android:strokeWidth="1.5"
+                android:strokeAlpha="0.5"
+                android:strokeLineCap="round" />
+            <path
+                android:pathData="M54,48 L54,52"
+                android:strokeColor="#00C853"
+                android:strokeWidth="1.5"
+                android:strokeAlpha="0.5"
+                android:strokeLineCap="round" />
+            <path
+                android:pathData="M51,60 L50,64"
+                android:strokeColor="#00C853"
+                android:strokeWidth="1.5"
+                android:strokeAlpha="0.5"
+                android:strokeLineCap="round" />
+            <path
+                android:pathData="M54,72 L54,76"
+                android:strokeColor="#00C853"
+                android:strokeWidth="1.5"
+                android:strokeAlpha="0.5"
+                android:strokeLineCap="round" />
         </vector>
     </foreground>
 </adaptive-icon>

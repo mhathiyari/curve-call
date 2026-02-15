@@ -28,6 +28,11 @@ class SessionDataHolder @Inject constructor() {
     var routePoints: List<LatLon>? = null
         private set
 
+    /** The interpolated (uniformly spaced) points from analysis. Segment indices reference this list. */
+    @Volatile
+    var interpolatedPoints: List<LatLon>? = null
+        private set
+
     /** Optional route name from GPX metadata. */
     @Volatile
     var routeName: String? = null
@@ -42,10 +47,12 @@ class SessionDataHolder @Inject constructor() {
     fun setRouteData(
         segments: List<RouteSegment>,
         points: List<LatLon>,
+        interpolated: List<LatLon>,
         name: String?
     ) {
         routeSegments = segments
         routePoints = points
+        interpolatedPoints = interpolated
         routeName = name
     }
 
@@ -56,6 +63,7 @@ class SessionDataHolder @Inject constructor() {
     fun clear() {
         routeSegments = null
         routePoints = null
+        interpolatedPoints = null
         routeName = null
     }
 

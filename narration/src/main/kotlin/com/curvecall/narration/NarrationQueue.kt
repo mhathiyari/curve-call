@@ -5,16 +5,15 @@ import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
 /**
- * Thread-safe priority queue for narration events.
+ * Thread-safe queue for narration events ordered by curve position.
  *
- * Manages the ordering and delivery of narration events based on priority.
- * Higher severity curves interrupt lower severity in-progress narrations,
- * while same or lower severity events queue behind the current narration.
- *
- * Priority order (highest to lowest): hairpin > sharp > firm > moderate > gentle > straight
+ * Events are ordered by [NarrationEvent.curveDistanceFromStart] (ascending),
+ * with ties broken by priority (descending). The queue does **not** decide when
+ * to fire events — that responsibility belongs to [NarrationManager] which calls
+ * [TimingCalculator.evaluate] on each GPS tick.
  *
  * Key behaviors:
- * - Events are ordered by trigger distance, then by priority (higher first) for ties.
+ * - Events ordered by curve position along the route, then by priority for ties.
  * - Higher-priority events can interrupt the currently playing narration.
  * - Events marked as delivered are never re-triggered.
  * - Thread-safe: all operations are synchronized.
@@ -25,7 +24,7 @@ class NarrationQueue {
 
     private val lock = ReentrantLock()
 
-    /** Pending events ordered by trigger distance, not yet delivered. */
+    /** Pending events ordered by curve distance from start, not yet delivered. */
     private val pendingEvents = mutableListOf<NarrationEvent>()
 
     /** The event currently being spoken (if any). */
@@ -37,8 +36,8 @@ class NarrationQueue {
     /**
      * Add a narration event to the queue.
      *
-     * The event is inserted in order of trigger distance (ascending).
-     * Events with the same trigger distance are ordered by priority (descending).
+     * The event is inserted in order of curve distance (ascending).
+     * Events with the same curve distance are ordered by priority (descending).
      * If the event has already been delivered, it is silently ignored.
      *
      * @param event The narration event to enqueue.
@@ -52,10 +51,10 @@ class NarrationQueue {
                 return
             }
 
-            // Find insertion point: sorted by triggerDistance ascending, then priority descending
+            // Sorted by curveDistanceFromStart ascending, then priority descending
             val insertIndex = pendingEvents.indexOfFirst { existing ->
-                event.triggerDistanceFromStart < existing.triggerDistanceFromStart ||
-                    (event.triggerDistanceFromStart == existing.triggerDistanceFromStart &&
+                event.curveDistanceFromStart < existing.curveDistanceFromStart ||
+                    (event.curveDistanceFromStart == existing.curveDistanceFromStart &&
                         event.priority > existing.priority)
             }
 
@@ -75,57 +74,59 @@ class NarrationQueue {
     }
 
     /**
-     * Get the next event that should be spoken, given the current route progress.
+     * Get all pending events that are ahead of the current position.
      *
-     * Returns the highest-priority event whose trigger distance has been reached
-     * (i.e., trigger distance <= current progress along the route).
+     * Returns events whose curve entry point is ahead of (or at) the given progress,
+     * in queue order, excluding delivered events.
      *
-     * The returned event is removed from the pending queue and marked as the current event.
-     *
-     * @param currentProgressMeters Current distance along the route from start, in meters.
-     * @return The next event to speak, or null if no events are ready.
+     * @param currentProgressMeters Current distance along the route from start.
+     * @return List of pending events ahead of current position.
      */
-    fun nextEvent(currentProgressMeters: Double): NarrationEvent? {
+    fun eventsAhead(currentProgressMeters: Double): List<NarrationEvent> {
         lock.withLock {
-            // Find all events whose trigger distance has been reached
-            val readyEvents = pendingEvents.filter { event ->
-                event.triggerDistanceFromStart <= currentProgressMeters &&
+            return pendingEvents.filter { event ->
+                event.curveDistanceFromStart >= currentProgressMeters &&
                     eventKey(event) !in deliveredKeys
             }
-
-            if (readyEvents.isEmpty()) return null
-
-            // Pick the highest priority among ready events
-            val best = readyEvents.maxByOrNull { it.priority } ?: return null
-
-            pendingEvents.remove(best)
-            currentEvent = best
-            return best
         }
     }
 
     /**
-     * Check if a higher-priority event is ready and should interrupt the current narration.
+     * Mark an event as "now playing" — sets it as the current event.
      *
-     * @param currentProgressMeters Current distance along the route from start.
+     * @param event The event that is now being spoken.
+     */
+    fun markPlaying(event: NarrationEvent) {
+        lock.withLock {
+            pendingEvents.remove(event)
+            currentEvent = event
+        }
+    }
+
+    /**
+     * Check if a higher-priority event in the pending queue should interrupt
+     * the currently playing narration.
+     *
+     * This is called by the manager after it has determined (via [TimingCalculator.evaluate])
+     * which pending events are ready to fire. Among those, if any has higher priority
+     * than the current event, it should interrupt.
+     *
+     * @param readyEvents Events that the manager has determined should fire now.
      * @return The interrupting event if one exists with higher priority than current, null otherwise.
      */
-    fun checkForInterrupt(currentProgressMeters: Double): NarrationEvent? {
+    fun checkForInterrupt(readyEvents: List<NarrationEvent>): NarrationEvent? {
         lock.withLock {
             val current = currentEvent ?: return null
 
-            val readyEvents = pendingEvents.filter { event ->
-                event.triggerDistanceFromStart <= currentProgressMeters &&
-                    eventKey(event) !in deliveredKeys &&
-                    event.priority > current.priority
+            val interrupter = readyEvents
+                .filter { it.priority > current.priority && eventKey(it) !in deliveredKeys }
+                .maxByOrNull { it.priority }
+
+            if (interrupter != null) {
+                pendingEvents.remove(interrupter)
+                currentEvent = interrupter
             }
-
-            if (readyEvents.isEmpty()) return null
-
-            val best = readyEvents.maxByOrNull { it.priority } ?: return null
-            pendingEvents.remove(best)
-            currentEvent = best
-            return best
+            return interrupter
         }
     }
 
@@ -141,7 +142,7 @@ class NarrationQueue {
     }
 
     /**
-     * Mark a specific event as delivered by its text and trigger distance.
+     * Mark a specific event as delivered by its text and curve distance.
      */
     fun markDelivered(event: NarrationEvent) {
         lock.withLock {
@@ -221,10 +222,10 @@ class NarrationQueue {
     }
 
     /**
-     * Generate a unique key for an event based on its text and trigger distance.
+     * Generate a unique key for an event based on its text and curve distance.
      * This is used for deduplication and delivery tracking.
      */
     private fun eventKey(event: NarrationEvent): String {
-        return "${event.triggerDistanceFromStart}:${event.text}"
+        return "${event.curveDistanceFromStart}:${event.text}"
     }
 }

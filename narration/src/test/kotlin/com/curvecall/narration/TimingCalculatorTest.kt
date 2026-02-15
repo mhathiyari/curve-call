@@ -1,8 +1,9 @@
 package com.curvecall.narration
 
 import com.curvecall.narration.types.DrivingMode
-import com.curvecall.narration.types.NarrationConfig
-import com.curvecall.narration.types.SpeedUnit
+import com.curvecall.narration.types.TimingProfile
+import com.curvecall.narration.types.TimingProfileConfig
+import com.curvecall.narration.types.TriggerDecision
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.data.Offset
 import org.junit.jupiter.api.BeforeEach
@@ -11,103 +12,25 @@ import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 
 /**
- * Tests for the TimingCalculator announcement distance computation.
+ * Tests for the TimingCalculator's kinematic timing model.
  *
- * Verifies the formulas from PRD Section 6.3:
- * - announcement_distance = max(speed * lookAheadSeconds, MIN_ANNOUNCEMENT_DISTANCE)
- * - With braking: max(above, braking_distance * 1.5)
- * - braking_distance = (v^2 - v_advisory^2) / (2 * decelRate)
+ * Covers:
+ * - Braking distance calculations
+ * - TTS duration estimation
+ * - Dynamic trigger evaluation (FIRE / URGENT / WAIT)
+ * - Profile-dependent behavior (Relaxed / Normal / Sporty)
  */
 class TimingCalculatorTest {
 
     private lateinit var calculator: TimingCalculator
 
-    private val carConfig = NarrationConfig(
-        mode = DrivingMode.CAR,
-        verbosity = 2,
-        units = SpeedUnit.KMH,
-        lookAheadSeconds = 8.0
-    )
-
-    private val motoConfig = NarrationConfig(
-        mode = DrivingMode.MOTORCYCLE,
-        verbosity = 2,
-        units = SpeedUnit.KMH,
-        lookAheadSeconds = 10.0
-    )
+    private val normalProfile = TimingProfileConfig.forProfile(TimingProfile.NORMAL)
+    private val relaxedProfile = TimingProfileConfig.forProfile(TimingProfile.RELAXED)
+    private val sportyProfile = TimingProfileConfig.forProfile(TimingProfile.SPORTY)
 
     @BeforeEach
     fun setUp() {
         calculator = TimingCalculator()
-    }
-
-    // ========================================================================
-    // Basic announcement distance (no braking)
-    // ========================================================================
-
-    @Nested
-    @DisplayName("Basic Announcement Distance")
-    inner class BasicDistance {
-
-        @Test
-        fun `stationary returns minimum distance`() {
-            val dist = calculator.announcementDistance(0.0, carConfig)
-            assertThat(dist).isEqualTo(TimingCalculator.MIN_ANNOUNCEMENT_DISTANCE)
-        }
-
-        @Test
-        fun `very slow speed returns minimum distance`() {
-            // 5 km/h = ~1.39 m/s * 8s = 11.1m < 100m
-            val dist = calculator.announcementDistance(1.39, carConfig)
-            assertThat(dist).isEqualTo(TimingCalculator.MIN_ANNOUNCEMENT_DISTANCE)
-        }
-
-        @Test
-        fun `100 kmh car mode`() {
-            // 100 km/h = 27.78 m/s * 8s = 222.2m
-            val dist = calculator.announcementDistance(27.78, carConfig)
-            assertThat(dist).isCloseTo(222.2, Offset.offset(0.5))
-        }
-
-        @Test
-        fun `60 kmh car mode`() {
-            // 60 km/h = 16.67 m/s * 8s = 133.3m
-            val dist = calculator.announcementDistance(16.67, carConfig)
-            assertThat(dist).isCloseTo(133.3, Offset.offset(0.5))
-        }
-
-        @Test
-        fun `100 kmh motorcycle mode`() {
-            // 100 km/h = 27.78 m/s * 10s = 277.8m (motorcycle has longer look-ahead)
-            val dist = calculator.announcementDistance(27.78, motoConfig)
-            assertThat(dist).isCloseTo(277.8, Offset.offset(0.5))
-        }
-
-        @Test
-        fun `80 kmh motorcycle mode`() {
-            // 80 km/h = 22.22 m/s * 10s = 222.2m
-            val dist = calculator.announcementDistance(22.22, motoConfig)
-            assertThat(dist).isCloseTo(222.2, Offset.offset(0.5))
-        }
-
-        @Test
-        fun `custom look-ahead seconds`() {
-            val config = NarrationConfig(
-                mode = DrivingMode.CAR,
-                lookAheadSeconds = 12.0
-            )
-            // 100 km/h = 27.78 m/s * 12s = 333.3m
-            val dist = calculator.announcementDistance(27.78, config)
-            assertThat(dist).isCloseTo(333.3, Offset.offset(0.5))
-        }
-
-        @Test
-        fun `look-ahead distance scales linearly with speed`() {
-            val dist30 = calculator.announcementDistance(30.0, carConfig)
-            val dist60 = calculator.announcementDistance(60.0, carConfig)
-            // At these speeds, both are above minimum, so should be exactly 2x
-            assertThat(dist60).isCloseTo(dist30 * 2.0, Offset.offset(0.1))
-        }
     }
 
     // ========================================================================
@@ -169,119 +92,38 @@ class TimingCalculatorTest {
     }
 
     // ========================================================================
-    // Announcement distance with braking
+    // TTS duration estimation
     // ========================================================================
 
     @Nested
-    @DisplayName("Announcement Distance With Braking")
-    inner class WithBraking {
+    @DisplayName("TTS Duration Estimation")
+    inner class TtsDuration {
 
         @Test
-        fun `braking extends announcement distance`() {
-            // 100 km/h, need to slow to 30 km/h
-            // Look-ahead: 27.78 * 8 = 222.2m
-            // Braking: (27.78^2 - 8.33^2) / (2 * 4.0) = (771.73 - 69.39) / 8.0 = 87.79m
-            // Braking * 1.5 = 131.69m
-            // max(222.2, 131.69) = 222.2m (look-ahead dominates)
-            val dist = calculator.announcementDistance(27.78, carConfig, 8.33)
-            assertThat(dist).isCloseTo(222.2, Offset.offset(0.5))
+        fun `short prompt duration`() {
+            // "Sharp right ahead" = 3 words → 3/2.5 + 0.3 = 1.5s
+            val duration = calculator.estimateTtsDuration("Sharp right ahead")
+            assertThat(duration).isCloseTo(1.5, Offset.offset(0.05))
         }
 
         @Test
-        fun `heavy braking extends beyond look-ahead`() {
-            // 150 km/h = 41.67 m/s, need to slow to 20 km/h = 5.56 m/s
-            // Look-ahead: 41.67 * 8 = 333.3m
-            // Braking: (41.67^2 - 5.56^2) / (2 * 4.0) = (1736.39 - 30.91) / 8.0 = 213.19m
-            // Braking * 1.5 = 319.78m
-            // max(333.3, 319.78) = 333.3m
-            val dist = calculator.announcementDistance(41.67, carConfig, 5.56)
-            assertThat(dist).isCloseTo(333.3, Offset.offset(0.5))
+        fun `long prompt duration`() {
+            // "Sharp right ahead, tightening, slow to 35" = 7 words → 7/2.5 + 0.3 = 3.1s
+            val duration = calculator.estimateTtsDuration("Sharp right ahead, tightening, slow to 35")
+            assertThat(duration).isCloseTo(3.1, Offset.offset(0.05))
         }
 
         @Test
-        fun `extreme braking at low speed extends beyond look-ahead`() {
-            // 50 km/h = 13.89 m/s, need to slow to 0 (complete stop)
-            // Look-ahead: 13.89 * 8 = 111.1m
-            // Braking: 13.89^2 / (2 * 4.0) = 192.93 / 8.0 = 24.12m
-            // Braking * 1.5 = 36.17m
-            // max(111.1, 36.17) = 111.1m
-            val dist = calculator.announcementDistance(13.89, carConfig, 0.0)
-            assertThat(dist).isCloseTo(111.1, Offset.offset(0.5))
+        fun `medium prompt duration`() {
+            // "Series of 3 curves ahead" = 5 words → 5/2.5 + 0.3 = 2.3s
+            val duration = calculator.estimateTtsDuration("Series of 3 curves ahead")
+            assertThat(duration).isCloseTo(2.3, Offset.offset(0.05))
         }
 
         @Test
-        fun `motorcycle braking extends further than car`() {
-            // Same speed and advisory, motorcycle should need more distance
-            val carDist = calculator.announcementDistance(27.78, carConfig, 8.33)
-            val motoDist = calculator.announcementDistance(27.78, motoConfig, 8.33)
-            // Motorcycle has both longer look-ahead AND lower decel rate
-            assertThat(motoDist).isGreaterThan(carDist)
-        }
-
-        @Test
-        fun `no advisory speed returns basic distance`() {
-            val withAdvisory = calculator.announcementDistance(27.78, carConfig, null)
-            val basic = calculator.announcementDistance(27.78, carConfig)
-            assertThat(withAdvisory).isEqualTo(basic)
-        }
-
-        @Test
-        fun `advisory at current speed returns basic distance`() {
-            val dist = calculator.announcementDistance(27.78, carConfig, 27.78)
-            val basic = calculator.announcementDistance(27.78, carConfig)
-            assertThat(dist).isEqualTo(basic)
-        }
-
-        @Test
-        fun `advisory above current speed returns basic distance`() {
-            val dist = calculator.announcementDistance(20.0, carConfig, 30.0)
-            val basic = calculator.announcementDistance(20.0, carConfig)
-            assertThat(dist).isEqualTo(basic)
-        }
-    }
-
-    // ========================================================================
-    // Trigger distance from start
-    // ========================================================================
-
-    @Nested
-    @DisplayName("Trigger Distance From Start")
-    inner class TriggerDistance {
-
-        @Test
-        fun `trigger is curve distance minus announcement distance`() {
-            // Curve at 1000m, driving at 100 km/h
-            // Announcement dist = 27.78 * 8 = 222.2m
-            // Trigger = 1000 - 222.2 = 777.8m
-            val trigger = calculator.triggerDistanceFromStart(
-                curveDistanceFromStart = 1000.0,
-                currentSpeedMs = 27.78,
-                config = carConfig
-            )
-            assertThat(trigger).isCloseTo(777.8, Offset.offset(0.5))
-        }
-
-        @Test
-        fun `trigger clamped to zero when curve is too close`() {
-            // Curve at 50m, but announcement distance is 100m+
-            val trigger = calculator.triggerDistanceFromStart(
-                curveDistanceFromStart = 50.0,
-                currentSpeedMs = 27.78,
-                config = carConfig
-            )
-            assertThat(trigger).isEqualTo(0.0)
-        }
-
-        @Test
-        fun `trigger with braking advisory`() {
-            val trigger = calculator.triggerDistanceFromStart(
-                curveDistanceFromStart = 500.0,
-                currentSpeedMs = 27.78,
-                config = carConfig,
-                advisorySpeedMs = 8.33
-            )
-            val announceDist = calculator.announcementDistance(27.78, carConfig, 8.33)
-            assertThat(trigger).isCloseTo(500.0 - announceDist, Offset.offset(0.1))
+        fun `empty text has only startup delay`() {
+            val duration = calculator.estimateTtsDuration("")
+            assertThat(duration).isCloseTo(0.3, Offset.offset(0.05))
         }
     }
 
@@ -312,50 +154,334 @@ class TimingCalculatorTest {
     }
 
     // ========================================================================
-    // Specific speed scenarios
+    // Dynamic trigger evaluation
     // ========================================================================
 
     @Nested
-    @DisplayName("Speed Scenarios")
-    inner class SpeedScenarios {
+    @DisplayName("Evaluate - Basic Triggering")
+    inner class EvaluateBasic {
 
         @Test
-        fun `walking speed - 5 kmh`() {
-            // 5 km/h = 1.39 m/s * 8 = 11.1m -> clamped to 100m
-            val dist = calculator.announcementDistance(1.39, carConfig)
-            assertThat(dist).isEqualTo(100.0)
+        fun `WAIT when far from curve`() {
+            val decision = calculator.evaluate(
+                distanceToCurveEntry = 500.0,
+                currentSpeedMs = 27.78, // 100 km/h
+                advisorySpeedMs = 13.89, // 50 km/h
+                ttsDurationSec = 2.0,
+                profile = normalProfile,
+                mode = DrivingMode.CAR
+            )
+            assertThat(decision).isEqualTo(TriggerDecision.WAIT)
         }
 
         @Test
-        fun `city speed - 50 kmh`() {
-            // 50 km/h = 13.89 m/s * 8 = 111.1m
-            val dist = calculator.announcementDistance(13.89, carConfig)
-            assertThat(dist).isCloseTo(111.1, Offset.offset(0.5))
+        fun `FIRE when within lead distance`() {
+            // 100 km/h = 27.78 m/s, advisory 50 km/h = 13.89 m/s, Normal profile
+            // brakeDist = (27.78^2 - 13.89^2) / 8 ≈ 72.35m
+            // reactionDist = 27.78 * 1.5 = 41.67m
+            // ttsDist = 27.78 * 2.0 = 55.56m
+            // total = 72.35 + 41.67 + 55.56 = 169.58m
+            val decision = calculator.evaluate(
+                distanceToCurveEntry = 160.0, // within lead distance
+                currentSpeedMs = 27.78,
+                advisorySpeedMs = 13.89,
+                ttsDurationSec = 2.0,
+                profile = normalProfile,
+                mode = DrivingMode.CAR
+            )
+            assertThat(decision).isEqualTo(TriggerDecision.FIRE)
         }
 
         @Test
-        fun `highway speed - 120 kmh`() {
-            // 120 km/h = 33.33 m/s * 8 = 266.7m
-            val dist = calculator.announcementDistance(33.33, carConfig)
-            assertThat(dist).isCloseTo(266.7, Offset.offset(0.5))
+        fun `FIRE at minimum distance when slow`() {
+            // 10 km/h = 2.78 m/s, no braking
+            // reactionDist = 2.78 * 1.5 = 4.17m
+            // ttsDist = 2.78 * 2.0 = 5.56m
+            // total = 9.73m → clamped to 100m minimum
+            val decision = calculator.evaluate(
+                distanceToCurveEntry = 95.0,
+                currentSpeedMs = 2.78,
+                advisorySpeedMs = null,
+                ttsDurationSec = 2.0,
+                profile = normalProfile,
+                mode = DrivingMode.CAR
+            )
+            assertThat(decision).isEqualTo(TriggerDecision.FIRE)
         }
 
         @Test
-        fun `autobahn speed - 200 kmh`() {
-            // 200 km/h = 55.56 m/s * 8 = 444.4m
-            val dist = calculator.announcementDistance(55.56, carConfig)
-            assertThat(dist).isCloseTo(444.4, Offset.offset(0.5))
+        fun `WAIT when past curve`() {
+            val decision = calculator.evaluate(
+                distanceToCurveEntry = -10.0, // already past
+                currentSpeedMs = 27.78,
+                advisorySpeedMs = 13.89,
+                ttsDurationSec = 2.0,
+                profile = normalProfile,
+                mode = DrivingMode.CAR
+            )
+            assertThat(decision).isEqualTo(TriggerDecision.WAIT)
         }
 
         @Test
-        fun `motorcycle on mountain pass - 60 kmh with braking to 20 kmh`() {
-            // 60 km/h = 16.67 m/s, advisory 20 km/h = 5.56 m/s
-            // Look-ahead: 16.67 * 10 = 166.7m
-            // Braking: (16.67^2 - 5.56^2) / (2 * 3.0) = (277.89 - 30.91) / 6.0 = 41.16m
-            // Braking * 1.5 = 61.75m
-            // max(166.7, 61.75) = 166.7m
-            val dist = calculator.announcementDistance(16.67, motoConfig, 5.56)
-            assertThat(dist).isCloseTo(166.7, Offset.offset(0.5))
+        fun `FIRE for awareness prompt no braking needed`() {
+            // 40 km/h = 11.11 m/s, advisory 50 km/h (no braking)
+            // brakeDist = 0
+            // reactionDist = 11.11 * 1.5 = 16.67m
+            // ttsDist = 11.11 * 2.0 = 22.22m
+            // total = max(38.89, 100) = 100m
+            val decision = calculator.evaluate(
+                distanceToCurveEntry = 90.0,
+                currentSpeedMs = 11.11,
+                advisorySpeedMs = 13.89, // faster than current
+                ttsDurationSec = 2.0,
+                profile = normalProfile,
+                mode = DrivingMode.CAR
+            )
+            assertThat(decision).isEqualTo(TriggerDecision.FIRE)
+        }
+    }
+
+    // ========================================================================
+    // Urgent alert triggering
+    // ========================================================================
+
+    @Nested
+    @DisplayName("Evaluate - Urgent Alerts")
+    inner class EvaluateUrgent {
+
+        @Test
+        fun `URGENT when dangerously close to braking point`() {
+            // 100 km/h, braking to 50 km/h
+            // brakeDist ≈ 72.35m, urgency threshold (Normal) = 0.6
+            // Urgent fires when distanceToCurve < 72.35 * 0.6 = 43.41m
+            val decision = calculator.evaluate(
+                distanceToCurveEntry = 40.0, // below threshold
+                currentSpeedMs = 27.78,
+                advisorySpeedMs = 13.89,
+                ttsDurationSec = 2.0,
+                profile = normalProfile,
+                mode = DrivingMode.CAR
+            )
+            assertThat(decision).isEqualTo(TriggerDecision.URGENT)
+        }
+
+        @Test
+        fun `not URGENT when braking distance is comfortable`() {
+            // Same speed but farther away
+            val decision = calculator.evaluate(
+                distanceToCurveEntry = 50.0, // above threshold (72.35 * 0.6 = 43.41)
+                currentSpeedMs = 27.78,
+                advisorySpeedMs = 13.89,
+                ttsDurationSec = 2.0,
+                profile = normalProfile,
+                mode = DrivingMode.CAR
+            )
+            // Should be FIRE (within lead distance) but not URGENT
+            assertThat(decision).isNotEqualTo(TriggerDecision.URGENT)
+        }
+
+        @Test
+        fun `no URGENT when no braking needed`() {
+            val decision = calculator.evaluate(
+                distanceToCurveEntry = 10.0,
+                currentSpeedMs = 11.11,
+                advisorySpeedMs = null, // no braking
+                ttsDurationSec = 2.0,
+                profile = normalProfile,
+                mode = DrivingMode.CAR
+            )
+            // Should not be urgent even though very close — no braking needed
+            assertThat(decision).isNotEqualTo(TriggerDecision.URGENT)
+        }
+
+        @Test
+        fun `no URGENT when already below advisory speed`() {
+            val decision = calculator.evaluate(
+                distanceToCurveEntry = 10.0,
+                currentSpeedMs = 10.0,
+                advisorySpeedMs = 13.89, // faster than current
+                ttsDurationSec = 2.0,
+                profile = normalProfile,
+                mode = DrivingMode.CAR
+            )
+            assertThat(decision).isNotEqualTo(TriggerDecision.URGENT)
+        }
+    }
+
+    // ========================================================================
+    // Profile-dependent behavior
+    // ========================================================================
+
+    @Nested
+    @DisplayName("Evaluate - Profile Behavior")
+    inner class EvaluateProfiles {
+
+        @Test
+        fun `relaxed profile triggers earlier than normal`() {
+            // At a distance where Normal says WAIT but Relaxed says FIRE
+            // 100 km/h, advisory 50 km/h, 2s TTS
+            // Normal lead: 72.35 + 41.67 + 55.56 = 169.58m
+            // Relaxed lead: 72.35 + 69.45 + 55.56 = 197.36m (reactionTime = 2.5s)
+            val normalDecision = calculator.evaluate(
+                distanceToCurveEntry = 185.0,
+                currentSpeedMs = 27.78,
+                advisorySpeedMs = 13.89,
+                ttsDurationSec = 2.0,
+                profile = normalProfile,
+                mode = DrivingMode.CAR
+            )
+            val relaxedDecision = calculator.evaluate(
+                distanceToCurveEntry = 185.0,
+                currentSpeedMs = 27.78,
+                advisorySpeedMs = 13.89,
+                ttsDurationSec = 2.0,
+                profile = relaxedProfile,
+                mode = DrivingMode.CAR
+            )
+            assertThat(normalDecision).isEqualTo(TriggerDecision.WAIT)
+            assertThat(relaxedDecision).isEqualTo(TriggerDecision.FIRE)
+        }
+
+        @Test
+        fun `sporty profile triggers later than normal`() {
+            // At a distance where Sporty says WAIT but Normal says FIRE
+            // Sporty lead: 72.35 + 27.78 + 55.56 = 155.69m (reactionTime = 1.0s)
+            val sportyDecision = calculator.evaluate(
+                distanceToCurveEntry = 160.0,
+                currentSpeedMs = 27.78,
+                advisorySpeedMs = 13.89,
+                ttsDurationSec = 2.0,
+                profile = sportyProfile,
+                mode = DrivingMode.CAR
+            )
+            val normalDecision = calculator.evaluate(
+                distanceToCurveEntry = 160.0,
+                currentSpeedMs = 27.78,
+                advisorySpeedMs = 13.89,
+                ttsDurationSec = 2.0,
+                profile = normalProfile,
+                mode = DrivingMode.CAR
+            )
+            assertThat(sportyDecision).isEqualTo(TriggerDecision.WAIT)
+            assertThat(normalDecision).isEqualTo(TriggerDecision.FIRE)
+        }
+
+        @Test
+        fun `relaxed urgency threshold triggers urgent earlier`() {
+            // brakeDist ≈ 72.35m
+            // Relaxed urgency = 0.8 → urgent at 72.35 * 0.8 = 57.88m
+            // Sporty urgency = 0.4 → urgent at 72.35 * 0.4 = 28.94m
+            val relaxedDecision = calculator.evaluate(
+                distanceToCurveEntry = 50.0,
+                currentSpeedMs = 27.78,
+                advisorySpeedMs = 13.89,
+                ttsDurationSec = 2.0,
+                profile = relaxedProfile,
+                mode = DrivingMode.CAR
+            )
+            val sportyDecision = calculator.evaluate(
+                distanceToCurveEntry = 50.0,
+                currentSpeedMs = 27.78,
+                advisorySpeedMs = 13.89,
+                ttsDurationSec = 2.0,
+                profile = sportyProfile,
+                mode = DrivingMode.CAR
+            )
+            assertThat(relaxedDecision).isEqualTo(TriggerDecision.URGENT)
+            assertThat(sportyDecision).isNotEqualTo(TriggerDecision.URGENT)
+        }
+    }
+
+    // ========================================================================
+    // Worked examples from spec
+    // ========================================================================
+
+    @Nested
+    @DisplayName("Spec Worked Examples")
+    inner class SpecExamples {
+
+        @Test
+        fun `100 kmh sharp curve with advisory 50 kmh`() {
+            // v = 27.78 m/s, advisory = 13.89 m/s, Normal profile
+            // brakeDist = 72.35m, reactionDist = 41.67m
+            // TTS "Sharp right ahead, slow to 50" = 6 words → 2.7s
+            // ttsDist = 27.78 * 2.7 = 75.01m
+            // totalLead = 72.35 + 41.67 + 75.01 = 189.03m
+            val ttsDuration = calculator.estimateTtsDuration("Sharp right ahead, slow to 50")
+
+            // Just outside lead distance → WAIT
+            val waitDecision = calculator.evaluate(
+                distanceToCurveEntry = 195.0,
+                currentSpeedMs = 27.78,
+                advisorySpeedMs = 13.89,
+                ttsDurationSec = ttsDuration,
+                profile = normalProfile,
+                mode = DrivingMode.CAR
+            )
+            assertThat(waitDecision).isEqualTo(TriggerDecision.WAIT)
+
+            // Inside lead distance → FIRE
+            val fireDecision = calculator.evaluate(
+                distanceToCurveEntry = 185.0,
+                currentSpeedMs = 27.78,
+                advisorySpeedMs = 13.89,
+                ttsDurationSec = ttsDuration,
+                profile = normalProfile,
+                mode = DrivingMode.CAR
+            )
+            assertThat(fireDecision).isEqualTo(TriggerDecision.FIRE)
+        }
+
+        @Test
+        fun `60 kmh same curve much shorter lead distance`() {
+            // v = 16.67 m/s, advisory = 13.89 m/s
+            // brakeDist = (16.67^2 - 13.89^2) / 8 = (277.89 - 192.93) / 8 = 10.62m
+            // reactionDist = 16.67 * 1.5 = 25.0m
+            // TTS 2.7s → ttsDist = 16.67 * 2.7 = 45.01m
+            // totalLead = 10.62 + 25.0 + 45.01 = 80.63m
+            val ttsDuration = calculator.estimateTtsDuration("Sharp right ahead, slow to 50")
+
+            val decision = calculator.evaluate(
+                distanceToCurveEntry = 75.0,
+                currentSpeedMs = 16.67,
+                advisorySpeedMs = 13.89,
+                ttsDurationSec = ttsDuration,
+                profile = normalProfile,
+                mode = DrivingMode.CAR
+            )
+            assertThat(decision).isEqualTo(TriggerDecision.FIRE)
+        }
+
+        @Test
+        fun `45 kmh no braking needed uses minimum distance`() {
+            // v = 12.5 m/s, advisory = 13.89 m/s (already below)
+            // brakeDist = 0
+            // reactionDist = 12.5 * 1.5 = 18.75m
+            // ttsDist = 12.5 * 2.7 = 33.75m
+            // total = max(52.5, 100) = 100m
+            val ttsDuration = calculator.estimateTtsDuration("Sharp right ahead, slow to 50")
+
+            // At 95m → FIRE (within 100m minimum)
+            val decision = calculator.evaluate(
+                distanceToCurveEntry = 95.0,
+                currentSpeedMs = 12.5,
+                advisorySpeedMs = 13.89,
+                ttsDurationSec = ttsDuration,
+                profile = normalProfile,
+                mode = DrivingMode.CAR
+            )
+            assertThat(decision).isEqualTo(TriggerDecision.FIRE)
+
+            // At 105m → WAIT (outside minimum)
+            val waitDecision = calculator.evaluate(
+                distanceToCurveEntry = 105.0,
+                currentSpeedMs = 12.5,
+                advisorySpeedMs = 13.89,
+                ttsDurationSec = ttsDuration,
+                profile = normalProfile,
+                mode = DrivingMode.CAR
+            )
+            assertThat(waitDecision).isEqualTo(TriggerDecision.WAIT)
         }
     }
 }

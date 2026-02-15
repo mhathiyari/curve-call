@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.curvecall.data.preferences.UserPreferences
 import com.curvecall.engine.types.DrivingMode
 import com.curvecall.engine.types.SpeedUnit
+import com.curvecall.narration.types.TimingProfile
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -29,7 +30,7 @@ class SettingsViewModel @Inject constructor(
         val speedUnits: SpeedUnit = SpeedUnit.KMH,
         val verbosity: Int = 2,
         val lateralG: Double = 0.35,
-        val lookAheadTime: Double = 8.0,
+        val timingProfile: TimingProfile = TimingProfile.NORMAL,
         val ttsSpeechRate: Float = 1.0f,
         val ttsVoiceName: String? = null,
         val narrateStraights: Boolean = false,
@@ -53,14 +54,14 @@ class SettingsViewModel @Inject constructor(
                 userPreferences.speedUnits,
                 userPreferences.verbosity,
                 userPreferences.lateralG,
-                userPreferences.lookAheadTime
-            ) { mode, units, verbosity, lateralG, lookAhead ->
+                userPreferences.timingProfile
+            ) { mode, units, verbosity, lateralG, timingProfile ->
                 _uiState.value.copy(
                     drivingMode = mode,
                     speedUnits = units,
                     verbosity = verbosity,
                     lateralG = lateralG,
-                    lookAheadTime = lookAhead
+                    timingProfile = timingProfile
                 )
             }.collect { state ->
                 _uiState.value = state
@@ -120,8 +121,8 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { userPreferences.setLateralG(value) }
     }
 
-    fun setLookAheadTime(value: Double) {
-        viewModelScope.launch { userPreferences.setLookAheadTime(value) }
+    fun setTimingProfile(profile: TimingProfile) {
+        viewModelScope.launch { userPreferences.setTimingProfile(profile) }
     }
 
     fun setTtsSpeechRate(rate: Float) {

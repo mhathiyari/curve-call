@@ -1,81 +1,95 @@
 package com.curvecall.narration
 
 import com.curvecall.narration.types.DrivingMode
-import com.curvecall.narration.types.NarrationConfig
+import com.curvecall.narration.types.TimingProfileConfig
+import com.curvecall.narration.types.TriggerDecision
 import kotlin.math.max
 
 /**
- * Calculates announcement distances based on current speed, driving mode,
- * and optional braking requirements.
+ * Evaluates narration trigger timing using real-time vehicle kinematics.
  *
- * The timing model ensures narrations arrive early enough for the driver to react,
- * but not so early that they are forgotten.
+ * On each GPS tick the [evaluate] method computes the total required lead distance
+ * by working backwards from the action point:
  *
- * Formulas (from PRD Section 6.3):
  * ```
- * announcement_distance = max(currentSpeed * lookAheadSeconds, MIN_ANNOUNCEMENT_DISTANCE)
- *
- * If braking needed:
- *   braking_distance = (currentSpeed^2 - advisorySpeed^2) / (2 * decelRate)
- *   announcement_distance = max(announcement_distance, braking_distance * 1.5)
+ * |<-- TTS -->|<-- React -->|<-- Brake -->|
+ * [trigger]    [speaking]    [processing]  [braking]  [curve entry]
+ *     |                                                    |
+ *     |<-------------- total lead distance --------------->|
  * ```
+ *
+ * The action point is the **braking point** when braking is needed (currentSpeed >
+ * advisorySpeed), or the **curve entry** when the driver is already at/below
+ * advisory speed (awareness prompt only).
  *
  * This class is pure Kotlin with no Android dependencies.
  */
 class TimingCalculator {
 
     /**
-     * Calculate the announcement distance for a curve.
+     * Evaluate whether a narration event should fire on this GPS tick.
      *
-     * @param currentSpeedMs Current vehicle speed in meters per second.
-     * @param config Narration configuration (for look-ahead seconds and driving mode).
-     * @param advisorySpeedMs Advisory speed for the upcoming curve in m/s, or null if no
-     *   braking is needed.
-     * @return The distance in meters before the curve at which the narration should trigger.
+     * @param distanceToCurveEntry Meters from current position to the curve's start point.
+     * @param currentSpeedMs Current vehicle speed in m/s.
+     * @param advisorySpeedMs Advisory entry speed in m/s, or null if no braking needed.
+     * @param ttsDurationSec Estimated duration of the TTS utterance in seconds.
+     * @param profile Driver timing profile (reaction time, cooldown, urgency threshold).
+     * @param mode Driving mode (CAR or MOTORCYCLE) for deceleration rate selection.
+     * @return [TriggerDecision.FIRE], [TriggerDecision.URGENT], or [TriggerDecision.WAIT].
      */
-    fun announcementDistance(
+    fun evaluate(
+        distanceToCurveEntry: Double,
         currentSpeedMs: Double,
-        config: NarrationConfig,
-        advisorySpeedMs: Double? = null
-    ): Double {
-        // Basic time-based look-ahead
-        val lookAheadDistance = currentSpeedMs * config.lookAheadSeconds
+        advisorySpeedMs: Double?,
+        ttsDurationSec: Double,
+        profile: TimingProfileConfig,
+        mode: DrivingMode
+    ): TriggerDecision {
+        // Already past the curve — nothing to do
+        if (distanceToCurveEntry <= 0.0) return TriggerDecision.WAIT
 
-        // Start with the minimum of look-ahead or MIN_ANNOUNCEMENT_DISTANCE
-        var distance = max(lookAheadDistance, MIN_ANNOUNCEMENT_DISTANCE)
+        val decel = decelRateForMode(mode)
+        val needsBraking = advisorySpeedMs != null && currentSpeedMs > advisorySpeedMs
 
-        // If braking is needed, ensure enough distance for comfortable braking
-        if (advisorySpeedMs != null && advisorySpeedMs < currentSpeedMs) {
-            val decelRate = decelRateForMode(config.mode)
-            val brakingDistance = brakingDistance(currentSpeedMs, advisorySpeedMs, decelRate)
-            // Add 50% safety margin on braking distance
-            distance = max(distance, brakingDistance * BRAKING_SAFETY_MARGIN)
+        // Braking distance (0 if no braking needed)
+        val brakeDist = if (needsBraking) {
+            brakingDistance(currentSpeedMs, advisorySpeedMs!!, decel)
+        } else {
+            0.0
         }
 
-        return distance
+        // Urgent check: are we already dangerously close?
+        if (needsBraking && brakeDist > 0.0) {
+            val safetyRatio = distanceToCurveEntry / brakeDist
+            if (safetyRatio < profile.urgencyThreshold) {
+                return TriggerDecision.URGENT
+            }
+        }
+
+        // Total lead distance = braking + reaction + TTS speaking
+        val reactionDist = currentSpeedMs * profile.reactionTimeSec
+        val ttsDist = currentSpeedMs * ttsDurationSec
+        val leadDistance = max(brakeDist + reactionDist + ttsDist, MIN_ANNOUNCEMENT_DISTANCE)
+
+        return if (distanceToCurveEntry <= leadDistance) {
+            TriggerDecision.FIRE
+        } else {
+            TriggerDecision.WAIT
+        }
     }
 
     /**
-     * Calculate the trigger distance from start for a curve.
+     * Estimate TTS utterance duration from the narration text.
      *
-     * This is the route progress (distance from start) at which the narration should fire.
-     * It equals the curve's start distance minus the announcement distance.
+     * Uses an average speaking rate of ~2.5 words/second (150 wpm) plus
+     * a 300ms startup delay for TTS engine initialization.
      *
-     * @param curveDistanceFromStart Distance from route start to the curve's entry point (meters).
-     * @param currentSpeedMs Current speed in m/s.
-     * @param config Narration configuration.
-     * @param advisorySpeedMs Advisory speed in m/s, or null.
-     * @return The route progress value (meters from start) at which to trigger the narration.
-     *   Will be clamped to 0.0 minimum (narrate immediately if already past trigger point).
+     * @param text The narration text to estimate duration for.
+     * @return Estimated duration in seconds.
      */
-    fun triggerDistanceFromStart(
-        curveDistanceFromStart: Double,
-        currentSpeedMs: Double,
-        config: NarrationConfig,
-        advisorySpeedMs: Double? = null
-    ): Double {
-        val announceDist = announcementDistance(currentSpeedMs, config, advisorySpeedMs)
-        return max(0.0, curveDistanceFromStart - announceDist)
+    fun estimateTtsDuration(text: String): Double {
+        val wordCount = text.split("\\s+".toRegex()).filter { it.isNotBlank() }.size
+        return wordCount / WORDS_PER_SECOND + TTS_STARTUP_DELAY_SEC
     }
 
     /**
@@ -123,7 +137,10 @@ class TimingCalculator {
         /** More conservative braking deceleration for motorcycle mode. */
         const val DECEL_RATE_MOTORCYCLE = 3.0 // m/s^2
 
-        /** Safety margin multiplier applied to braking distance. */
-        const val BRAKING_SAFETY_MARGIN = 1.5
+        /** TTS average speaking rate. */
+        const val WORDS_PER_SECOND = 2.5
+
+        /** TTS engine startup delay. */
+        const val TTS_STARTUP_DELAY_SEC = 0.3
     }
 }

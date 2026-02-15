@@ -9,6 +9,8 @@ import com.curvecall.data.gpx.GpxParseException
 import com.curvecall.data.osm.OverpassClient
 import com.curvecall.data.preferences.UserPreferences
 import com.curvecall.data.session.SessionDataHolder
+import com.curvecall.data.tiles.TileDownloadState
+import com.curvecall.data.tiles.TileDownloader
 import com.curvecall.engine.RouteAnalyzer
 import com.curvecall.engine.types.DrivingMode
 import com.curvecall.engine.types.AnalysisConfig
@@ -22,13 +24,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 
 /**
  * ViewModel for the Home screen.
  *
- * Handles GPX file loading, route analysis via the engine, and navigation
- * to the session screen once analysis is complete.
+ * Handles GPX file loading, route analysis via the engine, tile caching,
+ * and navigation to the session screen once analysis is complete.
  */
 @HiltViewModel
 class HomeViewModel @Inject constructor(
@@ -37,7 +40,8 @@ class HomeViewModel @Inject constructor(
     private val routeAnalyzer: RouteAnalyzer,
     private val overpassClient: OverpassClient,
     private val userPreferences: UserPreferences,
-    private val sessionDataHolder: SessionDataHolder
+    private val sessionDataHolder: SessionDataHolder,
+    private val tileDownloader: TileDownloader
 ) : ViewModel() {
 
     /**
@@ -50,10 +54,12 @@ class HomeViewModel @Inject constructor(
         val routePointCount: Int = 0,
         val routeSegments: List<RouteSegment>? = null,
         val routePoints: List<LatLon>? = null,
+        val interpolatedPoints: List<LatLon>? = null,
         val errorMessage: String? = null,
         val isReadyForSession: Boolean = false,
         val recentRoutes: List<String> = emptyList(),
-        val drivingMode: DrivingMode = DrivingMode.CAR
+        val drivingMode: DrivingMode = DrivingMode.CAR,
+        val tileDownloadState: TileDownloadState = TileDownloadState.Idle
     )
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -69,6 +75,12 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             userPreferences.recentRoutes.collect { routes ->
                 _uiState.value = _uiState.value.copy(recentRoutes = routes.toList())
+            }
+        }
+        // Observe tile download state
+        viewModelScope.launch {
+            tileDownloader.state.collect { state ->
+                _uiState.value = _uiState.value.copy(tileDownloadState = state)
             }
         }
     }
@@ -89,13 +101,31 @@ class HomeViewModel @Inject constructor(
                 loadingMessage = "Parsing GPX file...",
                 errorMessage = null,
                 isReadyForSession = false,
-                routeSegments = null
+                routeSegments = null,
+                interpolatedPoints = null
             )
 
             try {
-                // Step 1: Open InputStream from URI using application context (thread-safe)
-                val inputStream = appContext.contentResolver.openInputStream(uri)
-                    ?: throw GpxParseException("Could not open file. The file may have been moved or deleted.")
+                // Step 1: Open InputStream from URI
+                // Try ContentResolver first; if SecurityException (lost permission),
+                // extract raw file path from the document URI and open directly.
+                val inputStream = try {
+                    appContext.contentResolver.openInputStream(uri)
+                        ?: throw GpxParseException("Could not open file. The file may have been moved or deleted.")
+                } catch (e: SecurityException) {
+                    // Attempt to recover: extract file path from document ID (raw:/path/to/file)
+                    val docId = try {
+                        android.provider.DocumentsContract.getDocumentId(uri)
+                    } catch (_: Exception) { null }
+                    val filePath = docId?.removePrefix("raw:")
+                    if (filePath != null) {
+                        val file = java.io.File(filePath)
+                        if (file.exists()) file.inputStream()
+                        else throw GpxParseException("File not found. Please select the file again.")
+                    } else {
+                        throw GpxParseException("Permission lost. Please select the file again.")
+                    }
+                }
 
                 // Step 2: Parse GPX (closes stream automatically via use{})
                 val gpxResult = inputStream.use { stream ->
@@ -124,38 +154,47 @@ class HomeViewModel @Inject constructor(
                     isMotorcycleMode = mode == DrivingMode.MOTORCYCLE
                 )
 
-                // Step 3: Run route analysis
-                val segments = routeAnalyzer.analyzeRoute(gpxResult.points, config)
+                // Step 3: Run detailed route analysis (includes interpolated points)
+                val result = routeAnalyzer.analyzeRouteDetailed(gpxResult.points, config)
 
                 _uiState.value = _uiState.value.copy(
                     loadingMessage = "Route analyzed successfully.",
-                    routeSegments = segments,
-                    routePoints = gpxResult.points
+                    routeSegments = result.segments,
+                    routePoints = gpxResult.points,
+                    interpolatedPoints = result.interpolatedPoints
                 )
 
-                // Step 4: Fetch surface data for motorcycle mode (non-blocking)
+                // Step 4: Fetch surface data for motorcycle mode (best-effort, 8s cap)
                 if (mode == DrivingMode.MOTORCYCLE) {
                     _uiState.value = _uiState.value.copy(
                         loadingMessage = "Fetching surface data..."
                     )
                     try {
-                        overpassClient.fetchSurfaceData(gpxResult.points)
-                    } catch (e: Exception) {
+                        withTimeoutOrNull(8_000L) {
+                            overpassClient.fetchSurfaceData(gpxResult.points)
+                        }
+                    } catch (_: Exception) {
                         // Surface data is optional, continue without it
                     }
                 }
 
-                // Step 5: Store data for session consumption
+                // Step 5: Store data for session consumption (including interpolated points)
                 sessionDataHolder.setRouteData(
-                    segments = segments,
+                    segments = result.segments,
                     points = gpxResult.points,
+                    interpolated = result.interpolatedPoints,
                     name = gpxResult.routeName
                 )
 
                 // Step 6: Save to recent routes
                 userPreferences.addRecentRoute(uri.toString())
 
-                // Ready for session
+                // Step 7: Trigger tile download in background (non-blocking)
+                viewModelScope.launch(Dispatchers.IO) {
+                    tileDownloader.downloadForRoute(result.interpolatedPoints)
+                }
+
+                // Ready for session (don't wait for tile download)
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     isReadyForSession = true,
@@ -209,7 +248,9 @@ class HomeViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(
             isReadyForSession = false,
             routeSegments = null,
-            routePoints = null
+            routePoints = null,
+            interpolatedPoints = null
         )
+        tileDownloader.reset()
     }
 }

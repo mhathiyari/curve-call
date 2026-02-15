@@ -1,12 +1,17 @@
 package com.curvecall.ui.home
 
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,25 +21,26 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.DirectionsBike
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.DirectionsCar
-import androidx.compose.material.icons.filled.FileOpen
-import androidx.compose.material.icons.filled.Route
+import androidx.compose.material.icons.filled.NearMe
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.Button
+import androidx.compose.material.icons.filled.TwoWheeler
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -42,8 +48,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -51,27 +56,34 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.curvecall.engine.types.DrivingMode
+import com.curvecall.ui.map.RoutePreviewMap
 import com.curvecall.ui.theme.CurveCallPrimary
+import com.curvecall.ui.theme.CurveCallPrimaryDim
+import com.curvecall.ui.theme.CurveCallPrimaryVariant
+import com.curvecall.ui.theme.DarkBackground
+import com.curvecall.ui.theme.DarkSurfaceElevated
+import kotlinx.coroutines.delay
 
 /**
- * Home screen composable (PRD Section 8.1 - Home Screen).
+ * Home screen — premium "instrument panel" aesthetic.
  *
- * Displays:
- * - App logo and name
- * - "Load GPX" button that opens the system file picker via SAF
- * - Recently loaded routes list
- * - Car/Motorcycle mode toggle (prominent)
- * - Settings gear icon
- *
- * When a GPX file is loaded and analyzed, navigates to the Session screen.
+ * Features a custom S-curve logo with headlight glow, radial gradient backdrop,
+ * staggered entrance animations, glow-bordered mode toggle, and refined route cards.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -83,11 +95,19 @@ fun HomeScreen(
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // SAF file picker launcher — passes URI to ViewModel which opens the stream on a background thread
+    // SAF file picker launcher
+    val context = LocalContext.current
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
-        uri?.let { viewModel.loadGpxFile(it) }
+        uri?.let {
+            try {
+                context.contentResolver.takePersistableUriPermission(
+                    it, Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (_: SecurityException) { /* best-effort */ }
+            viewModel.loadGpxFile(it)
+        }
     }
 
     // Navigate to session when route is analyzed and ready
@@ -106,154 +126,204 @@ fun HomeScreen(
         }
     }
 
+    // Static layout — no entrance animation (keeps composition stable)
+    val logoAlpha = remember { Animatable(1f) }
+    val logoOffset = remember { Animatable(0f) }
+    val contentAlpha = remember { Animatable(1f) }
+    val contentOffset = remember { Animatable(0f) }
+    val bottomAlpha = remember { Animatable(1f) }
+
     Scaffold(
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
-        topBar = {
-            TopAppBar(
-                title = { },
-                actions = {
-                    IconButton(onClick = onNavigateToSettings) {
-                        Icon(
-                            imageVector = Icons.Default.Settings,
-                            contentDescription = "Settings",
-                            tint = MaterialTheme.colorScheme.onBackground
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
-                )
-            )
-        }
+        containerColor = DarkBackground
     ) { paddingValues ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
+                .background(DarkBackground)
                 .padding(paddingValues)
-                .padding(horizontal = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(modifier = Modifier.height(32.dp))
-
-            // App Logo and Name
-            Icon(
-                imageVector = Icons.Default.Route,
-                contentDescription = null,
-                modifier = Modifier.size(72.dp),
-                tint = CurveCallPrimary
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = "CurveCall",
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            Text(
-                text = "Your digital co-driver",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
-            )
-
-            Spacer(modifier = Modifier.height(40.dp))
-
-            // Driving Mode Toggle (Prominent)
-            DrivingModeToggle(
-                currentMode = uiState.drivingMode,
-                onToggle = { viewModel.toggleDrivingMode() }
-            )
-
-            Spacer(modifier = Modifier.height(32.dp))
-
-            // Load GPX Button
-            Button(
-                onClick = {
-                    filePickerLauncher.launch(arrayOf(
-                        "application/gpx+xml",
-                        "application/xml",
-                        "text/xml",
-                        "*/*"
-                    ))
-                },
+            // -- Radial gradient backdrop behind logo (headlight on dark road) --
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                enabled = !uiState.isLoading,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = CurveCallPrimary
-                ),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                if (uiState.isLoading) {
-                    LinearProgressIndicator(
-                        modifier = Modifier
-                            .width(24.dp)
-                            .height(2.dp),
-                        color = MaterialTheme.colorScheme.onPrimary
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text(
-                        text = uiState.loadingMessage,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                } else {
-                    Icon(
-                        imageVector = Icons.Default.FileOpen,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text(
-                        text = "Load GPX Route",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            }
-
-            // Loading progress info
-            AnimatedVisibility(
-                visible = uiState.isLoading && uiState.routePointCount > 0,
-                enter = fadeIn(),
-                exit = fadeOut()
-            ) {
-                Text(
-                    text = "${uiState.routePointCount} track points",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
-                    modifier = Modifier.padding(top = 8.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(32.dp))
-
-            // Recent Routes Section
-            if (uiState.recentRoutes.isNotEmpty()) {
-                Text(
-                    text = "Recent Routes",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 8.dp)
-                )
-
-                LazyColumn(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(uiState.recentRoutes) { routeUri ->
-                        RecentRouteItem(
-                            routeUri = routeUri,
-                            onClick = {
-                                try {
-                                    viewModel.loadGpxFile(Uri.parse(routeUri))
-                                } catch (e: Exception) {
-                                    // URI may no longer be accessible
-                                }
-                            }
+                    .fillMaxSize()
+                    .drawBehind {
+                        drawCircle(
+                            brush = Brush.radialGradient(
+                                colors = listOf(
+                                    CurveCallPrimary.copy(alpha = 0.08f),
+                                    CurveCallPrimaryDim.copy(alpha = 0.03f),
+                                    Color.Transparent
+                                ),
+                                center = Offset(size.width / 2f, size.height * 0.18f),
+                                radius = size.width * 0.9f
+                            )
                         )
+                    }
+            )
+
+            // -- Settings button (top-right) --
+            IconButton(
+                onClick = onNavigateToSettings,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 8.dp, end = 8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Settings,
+                    contentDescription = "Settings",
+                    tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
+                )
+            }
+
+            // -- Main content --
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 28.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Spacer(modifier = Modifier.height(48.dp))
+
+                // ===== HERO: Logo + Title =====
+                Box(
+                    modifier = Modifier
+                        .alpha(logoAlpha.value)
+                        .offset { IntOffset(0, logoOffset.value.dp.roundToPx()) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CurveCallLogo(size = 100.dp)
+
+                        Spacer(modifier = Modifier.height(20.dp))
+
+                        Text(
+                            text = "CurveCall",
+                            style = MaterialTheme.typography.headlineLarge.copy(
+                                fontSize = 32.sp,
+                                letterSpacing = 2.sp
+                            ),
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        Text(
+                            text = "YOUR DIGITAL CO-DRIVER",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                letterSpacing = 3.sp,
+                                fontSize = 11.sp
+                            ),
+                            color = CurveCallPrimary.copy(alpha = 0.6f)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(48.dp))
+
+                // ===== CONTROLS =====
+                Column(
+                    modifier = Modifier
+                        .alpha(contentAlpha.value)
+                        .offset { IntOffset(0, contentOffset.value.dp.roundToPx()) },
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    // -- Driving Mode Toggle --
+                    DrivingModeToggle(
+                        currentMode = uiState.drivingMode,
+                        onToggle = { viewModel.toggleDrivingMode() }
+                    )
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    // -- Load GPX Button (gradient border) --
+                    LoadRouteButton(
+                        isLoading = uiState.isLoading,
+                        loadingMessage = uiState.loadingMessage,
+                        onClick = {
+                            filePickerLauncher.launch(arrayOf(
+                                "application/gpx+xml",
+                                "application/xml",
+                                "text/xml",
+                                "*/*"
+                            ))
+                        }
+                    )
+
+                    // Loading track point count
+                    AnimatedVisibility(
+                        visible = uiState.isLoading && uiState.routePointCount > 0,
+                        enter = fadeIn(),
+                        exit = fadeOut()
+                    ) {
+                        Text(
+                            text = "${uiState.routePointCount} track points",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = CurveCallPrimary.copy(alpha = 0.5f),
+                            modifier = Modifier.padding(top = 8.dp)
+                        )
+                    }
+
+                    // Route preview map
+                    AnimatedVisibility(
+                        visible = uiState.routeSegments != null && uiState.interpolatedPoints != null,
+                        enter = fadeIn() + slideInVertically { it / 4 },
+                        exit = fadeOut()
+                    ) {
+                        RoutePreviewMap(
+                            routePoints = uiState.interpolatedPoints ?: emptyList(),
+                            routeSegments = uiState.routeSegments ?: emptyList(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(220.dp)
+                                .padding(top = 16.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .border(
+                                    width = 1.dp,
+                                    color = CurveCallPrimary.copy(alpha = 0.15f),
+                                    shape = RoundedCornerShape(16.dp)
+                                )
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(32.dp))
+
+                // ===== RECENT ROUTES =====
+                Column(modifier = Modifier.alpha(bottomAlpha.value)) {
+                    if (uiState.recentRoutes.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "RECENT",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    letterSpacing = 2.sp
+                                ),
+                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        LazyColumn(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            itemsIndexed(uiState.recentRoutes) { _, routeUri ->
+                                RecentRouteItem(
+                                    routeUri = routeUri,
+                                    onClick = {
+                                        try {
+                                            viewModel.loadGpxFile(Uri.parse(routeUri))
+                                        } catch (_: Exception) { }
+                                    }
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -262,7 +332,7 @@ fun HomeScreen(
 }
 
 /**
- * Prominent toggle between Car and Motorcycle driving modes.
+ * Premium driving mode toggle with glow-border on selected mode.
  */
 @Composable
 private fun DrivingModeToggle(
@@ -272,23 +342,20 @@ private fun DrivingModeToggle(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color(0xFF131313))
             .clickable { onToggle() }
             .padding(4.dp),
-        horizontalArrangement = Arrangement.Center
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        // Car option
         ModeOption(
             icon = Icons.Default.DirectionsCar,
             label = "Car",
             isSelected = currentMode == DrivingMode.CAR,
             modifier = Modifier.weight(1f)
         )
-
-        // Motorcycle option
         ModeOption(
-            icon = Icons.Default.DirectionsBike,
+            icon = Icons.Default.TwoWheeler,
             label = "Motorcycle",
             isSelected = currentMode == DrivingMode.MOTORCYCLE,
             modifier = Modifier.weight(1f)
@@ -298,19 +365,43 @@ private fun DrivingModeToggle(
 
 @Composable
 private fun ModeOption(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     label: String,
     isSelected: Boolean,
     modifier: Modifier = Modifier
 ) {
+    val shape = RoundedCornerShape(10.dp)
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(
-                if (isSelected) CurveCallPrimary
-                else MaterialTheme.colorScheme.surfaceVariant
+            .then(
+                if (isSelected) {
+                    Modifier
+                        .border(
+                            width = 1.dp,
+                            brush = Brush.verticalGradient(
+                                colors = listOf(
+                                    CurveCallPrimary.copy(alpha = 0.6f),
+                                    CurveCallPrimary.copy(alpha = 0.2f)
+                                )
+                            ),
+                            shape = shape
+                        )
+                        .background(
+                            brush = Brush.verticalGradient(
+                                colors = listOf(
+                                    CurveCallPrimary.copy(alpha = 0.15f),
+                                    CurveCallPrimary.copy(alpha = 0.05f)
+                                )
+                            ),
+                            shape = shape
+                        )
+                } else {
+                    Modifier
+                        .background(Color.Transparent, shape)
+                }
             )
-            .padding(vertical = 16.dp),
+            .clip(shape)
+            .padding(vertical = 14.dp),
         contentAlignment = Alignment.Center
     ) {
         Row(
@@ -320,58 +411,169 @@ private fun ModeOption(
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                modifier = Modifier.size(24.dp),
-                tint = if (isSelected) MaterialTheme.colorScheme.onPrimary
-                else MaterialTheme.colorScheme.onSurfaceVariant
+                modifier = Modifier.size(22.dp),
+                tint = if (isSelected) CurveCallPrimary
+                else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.35f)
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
                 text = label,
                 style = MaterialTheme.typography.titleSmall,
-                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                color = if (isSelected) MaterialTheme.colorScheme.onPrimary
-                else MaterialTheme.colorScheme.onSurfaceVariant
+                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (isSelected) Color.White
+                else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.35f)
             )
         }
     }
 }
 
 /**
- * A row displaying a recently loaded route.
+ * Load route button with gradient border glow effect.
+ */
+@Composable
+private fun LoadRouteButton(
+    isLoading: Boolean,
+    loadingMessage: String,
+    onClick: () -> Unit
+) {
+    val shape = RoundedCornerShape(14.dp)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .border(
+                width = 1.5.dp,
+                brush = Brush.linearGradient(
+                    colors = if (isLoading) listOf(
+                        CurveCallPrimary.copy(alpha = 0.3f),
+                        CurveCallPrimaryVariant.copy(alpha = 0.2f)
+                    ) else listOf(
+                        CurveCallPrimary.copy(alpha = 0.7f),
+                        CurveCallPrimaryVariant.copy(alpha = 0.4f),
+                        CurveCallPrimary.copy(alpha = 0.7f)
+                    )
+                ),
+                shape = shape
+            )
+            .background(
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        CurveCallPrimary.copy(alpha = 0.08f),
+                        Color.Transparent
+                    )
+                ),
+                shape = shape
+            )
+            .clip(shape)
+            .clickable(enabled = !isLoading) { onClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        if (isLoading) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    color = CurveCallPrimary,
+                    strokeWidth = 2.dp
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = loadingMessage,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
+                )
+            }
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.NearMe,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = CurveCallPrimary
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = "Load GPX Route",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Refined recent route card with subtle left accent and chevron.
  */
 @Composable
 private fun RecentRouteItem(
     routeUri: String,
     onClick: () -> Unit
 ) {
+    val displayName = Uri.parse(routeUri).lastPathSegment
+        ?.replace(".gpx", "")
+        ?.replace("-", " ")
+        ?.replace("_", " ")
+        ?: "Route"
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onClick() },
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
+            containerColor = DarkSurfaceElevated
         ),
         shape = RoundedCornerShape(12.dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .drawBehind {
+                    // Left accent bar
+                    drawRect(
+                        color = CurveCallPrimary.copy(alpha = 0.5f),
+                        topLeft = Offset.Zero,
+                        size = androidx.compose.ui.geometry.Size(3.dp.toPx(), size.height)
+                    )
+                }
+                .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = Icons.Default.Route,
-                contentDescription = null,
-                modifier = Modifier.size(20.dp),
-                tint = CurveCallPrimary
-            )
+            // Route icon with subtle glow circle
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .background(
+                        color = CurveCallPrimary.copy(alpha = 0.1f),
+                        shape = CircleShape
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.NearMe,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = CurveCallPrimary
+                )
+            }
+
             Spacer(modifier = Modifier.width(12.dp))
+
             Text(
-                text = Uri.parse(routeUri).lastPathSegment ?: "Route",
+                text = displayName,
                 style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f),
+                modifier = Modifier.weight(1f)
+            )
+
+            Icon(
+                imageVector = Icons.Default.ChevronRight,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.2f)
             )
         }
     }

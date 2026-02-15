@@ -11,13 +11,14 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 /**
- * Tests for the NarrationQueue priority queue.
+ * Tests for the NarrationQueue.
  *
  * Covers:
- * - Priority ordering (hairpin > sharp > firm > moderate > gentle > straight)
+ * - Ordering by curveDistanceFromStart
+ * - Priority ordering for ties
  * - Interrupt behavior (higher severity interrupts lower)
- * - Same/lower severity queues after current
  * - Delivery marking (no re-triggering)
+ * - eventsAhead filtering
  * - Thread safety
  */
 class NarrationQueueTest {
@@ -36,18 +37,20 @@ class NarrationQueueTest {
     private fun event(
         text: String = "test",
         priority: Int = NarrationEvent.PRIORITY_MODERATE,
-        triggerDistance: Double = 100.0,
+        curveDistance: Double = 100.0,
+        advisorySpeedMs: Double? = null,
         delivered: Boolean = false
     ) = NarrationEvent(
         text = text,
         priority = priority,
-        triggerDistanceFromStart = triggerDistance,
+        curveDistanceFromStart = curveDistance,
+        advisorySpeedMs = advisorySpeedMs,
         associatedCurve = null,
         delivered = delivered
     )
 
     // ========================================================================
-    // Basic enqueue and dequeue
+    // Basic enqueue and ordering
     // ========================================================================
 
     @Nested
@@ -55,51 +58,39 @@ class NarrationQueueTest {
     inner class BasicOperations {
 
         @Test
-        fun `empty queue returns null`() {
-            assertThat(queue.nextEvent(0.0)).isNull()
+        fun `empty queue returns empty events ahead`() {
+            assertThat(queue.eventsAhead(0.0)).isEmpty()
         }
 
         @Test
-        fun `enqueue and dequeue single event`() {
-            queue.enqueue(event(text = "curve ahead", triggerDistance = 50.0))
-            val next = queue.nextEvent(50.0)
-            assertThat(next).isNotNull
-            assertThat(next!!.text).isEqualTo("curve ahead")
+        fun `enqueue and retrieve single event`() {
+            queue.enqueue(event(text = "curve ahead", curveDistance = 500.0))
+            val ahead = queue.eventsAhead(0.0)
+            assertThat(ahead).hasSize(1)
+            assertThat(ahead[0].text).isEqualTo("curve ahead")
         }
 
         @Test
-        fun `event not ready before trigger distance`() {
-            queue.enqueue(event(triggerDistance = 200.0))
-            assertThat(queue.nextEvent(100.0)).isNull()
+        fun `events behind current position are filtered out`() {
+            queue.enqueue(event(text = "behind", curveDistance = 50.0))
+            queue.enqueue(event(text = "ahead", curveDistance = 200.0))
+            val ahead = queue.eventsAhead(100.0)
+            assertThat(ahead).hasSize(1)
+            assertThat(ahead[0].text).isEqualTo("ahead")
         }
 
         @Test
-        fun `event ready at exact trigger distance`() {
-            queue.enqueue(event(triggerDistance = 200.0))
-            assertThat(queue.nextEvent(200.0)).isNotNull
-        }
-
-        @Test
-        fun `event ready past trigger distance`() {
-            queue.enqueue(event(triggerDistance = 200.0))
-            assertThat(queue.nextEvent(250.0)).isNotNull
+        fun `events at exact current position are included`() {
+            queue.enqueue(event(curveDistance = 100.0))
+            assertThat(queue.eventsAhead(100.0)).hasSize(1)
         }
 
         @Test
         fun `pending count tracks undelivered events`() {
-            queue.enqueue(event(triggerDistance = 100.0))
-            queue.enqueue(event(triggerDistance = 200.0))
-            queue.enqueue(event(triggerDistance = 300.0))
+            queue.enqueue(event(text = "a", curveDistance = 100.0))
+            queue.enqueue(event(text = "b", curveDistance = 200.0))
+            queue.enqueue(event(text = "c", curveDistance = 300.0))
             assertThat(queue.pendingCount()).isEqualTo(3)
-        }
-
-        @Test
-        fun `dequeue reduces pending count`() {
-            queue.enqueue(event(text = "a", triggerDistance = 100.0))
-            queue.enqueue(event(text = "b", triggerDistance = 200.0))
-            assertThat(queue.pendingCount()).isEqualTo(2)
-            queue.nextEvent(100.0)
-            assertThat(queue.pendingCount()).isEqualTo(1)
         }
     }
 
@@ -112,42 +103,28 @@ class NarrationQueueTest {
     inner class PriorityOrdering {
 
         @Test
-        fun `higher priority served first among ready events`() {
-            queue.enqueue(event(text = "gentle", priority = NarrationEvent.PRIORITY_GENTLE, triggerDistance = 100.0))
-            queue.enqueue(event(text = "sharp", priority = NarrationEvent.PRIORITY_SHARP, triggerDistance = 100.0))
-            queue.enqueue(event(text = "moderate", priority = NarrationEvent.PRIORITY_MODERATE, triggerDistance = 100.0))
+        fun `events at same distance ordered by priority descending`() {
+            queue.enqueue(event(text = "gentle", priority = NarrationEvent.PRIORITY_GENTLE, curveDistance = 100.0))
+            queue.enqueue(event(text = "sharp", priority = NarrationEvent.PRIORITY_SHARP, curveDistance = 100.0))
+            queue.enqueue(event(text = "moderate", priority = NarrationEvent.PRIORITY_MODERATE, curveDistance = 100.0))
 
-            val first = queue.nextEvent(100.0)
-            assertThat(first!!.text).isEqualTo("sharp")
+            val pending = queue.pendingEvents()
+            assertThat(pending[0].text).isEqualTo("sharp")
         }
 
         @Test
-        fun `hairpin beats all other priorities`() {
-            queue.enqueue(event(text = "sharp", priority = NarrationEvent.PRIORITY_SHARP, triggerDistance = 100.0))
-            queue.enqueue(event(text = "hairpin", priority = NarrationEvent.PRIORITY_HAIRPIN, triggerDistance = 100.0))
-            queue.enqueue(event(text = "firm", priority = NarrationEvent.PRIORITY_FIRM, triggerDistance = 100.0))
+        fun `events ordered by distance then priority`() {
+            queue.enqueue(event(text = "far-high", priority = NarrationEvent.PRIORITY_SHARP, curveDistance = 300.0))
+            queue.enqueue(event(text = "near-low", priority = NarrationEvent.PRIORITY_GENTLE, curveDistance = 100.0))
+            queue.enqueue(event(text = "near-high", priority = NarrationEvent.PRIORITY_SHARP, curveDistance = 100.0))
 
-            val first = queue.nextEvent(100.0)
-            assertThat(first!!.text).isEqualTo("hairpin")
+            val pending = queue.pendingEvents()
+            // Near events first, high priority before low at same distance
+            assertThat(pending.map { it.text }).containsExactly("near-high", "near-low", "far-high")
         }
 
         @Test
-        fun `events at different trigger distances served in order when reached`() {
-            queue.enqueue(event(text = "far", triggerDistance = 300.0))
-            queue.enqueue(event(text = "near", triggerDistance = 100.0))
-            queue.enqueue(event(text = "mid", triggerDistance = 200.0))
-
-            val first = queue.nextEvent(100.0)
-            assertThat(first!!.text).isEqualTo("near")
-
-            queue.markCurrentDelivered()
-
-            val second = queue.nextEvent(200.0)
-            assertThat(second!!.text).isEqualTo("mid")
-        }
-
-        @Test
-        fun `full priority chain ordering`() {
+        fun `full priority chain ordering at same distance`() {
             val priorities = listOf(
                 "straight" to NarrationEvent.PRIORITY_STRAIGHT,
                 "gentle" to NarrationEvent.PRIORITY_GENTLE,
@@ -157,85 +134,81 @@ class NarrationQueueTest {
                 "hairpin" to NarrationEvent.PRIORITY_HAIRPIN
             )
 
-            // Enqueue all at the same trigger distance
             priorities.shuffled().forEach { (text, priority) ->
-                queue.enqueue(event(text = text, priority = priority, triggerDistance = 100.0))
+                queue.enqueue(event(text = text, priority = priority, curveDistance = 100.0))
             }
 
-            // Should come out in descending priority order
-            val results = mutableListOf<String>()
-            repeat(6) {
-                val next = queue.nextEvent(100.0)
-                if (next != null) {
-                    results.add(next.text)
-                    queue.markCurrentDelivered()
-                }
-            }
-
-            assertThat(results).isEqualTo(listOf("hairpin", "sharp", "firm", "moderate", "gentle", "straight"))
+            val pending = queue.pendingEvents()
+            assertThat(pending.map { it.text }).isEqualTo(
+                listOf("hairpin", "sharp", "firm", "moderate", "gentle", "straight")
+            )
         }
     }
 
     // ========================================================================
-    // Interrupt behavior
+    // markPlaying and interrupt behavior
     // ========================================================================
 
     @Nested
-    @DisplayName("Interrupt Behavior")
-    inner class InterruptBehavior {
+    @DisplayName("Playing and Interrupt Behavior")
+    inner class PlayingAndInterrupt {
+
+        @Test
+        fun `markPlaying removes event from pending`() {
+            val e = event(text = "curve", curveDistance = 100.0)
+            queue.enqueue(e)
+            queue.markPlaying(e)
+            assertThat(queue.pendingCount()).isEqualTo(0)
+            assertThat(queue.currentlyPlaying()?.text).isEqualTo("curve")
+        }
 
         @Test
         fun `higher priority interrupts lower priority in-progress`() {
-            // Start with a gentle narration
-            queue.enqueue(event(text = "gentle", priority = NarrationEvent.PRIORITY_GENTLE, triggerDistance = 100.0))
-            val gentle = queue.nextEvent(100.0)
-            assertThat(gentle).isNotNull
+            val gentle = event(text = "gentle", priority = NarrationEvent.PRIORITY_GENTLE, curveDistance = 100.0)
+            val sharp = event(text = "sharp", priority = NarrationEvent.PRIORITY_SHARP, curveDistance = 200.0)
 
-            // Now a sharp event becomes ready
-            queue.enqueue(event(text = "sharp", priority = NarrationEvent.PRIORITY_SHARP, triggerDistance = 110.0))
+            queue.enqueue(gentle)
+            queue.enqueue(sharp)
+            queue.markPlaying(gentle)
 
-            val interrupt = queue.checkForInterrupt(110.0)
+            val interrupt = queue.checkForInterrupt(listOf(sharp))
             assertThat(interrupt).isNotNull
             assertThat(interrupt!!.text).isEqualTo("sharp")
+            assertThat(queue.currentlyPlaying()?.text).isEqualTo("sharp")
         }
 
         @Test
         fun `same priority does not interrupt`() {
-            queue.enqueue(event(text = "moderate1", priority = NarrationEvent.PRIORITY_MODERATE, triggerDistance = 100.0))
-            queue.nextEvent(100.0)
+            val mod1 = event(text = "moderate1", priority = NarrationEvent.PRIORITY_MODERATE, curveDistance = 100.0)
+            val mod2 = event(text = "moderate2", priority = NarrationEvent.PRIORITY_MODERATE, curveDistance = 200.0)
 
-            queue.enqueue(event(text = "moderate2", priority = NarrationEvent.PRIORITY_MODERATE, triggerDistance = 110.0))
+            queue.enqueue(mod1)
+            queue.enqueue(mod2)
+            queue.markPlaying(mod1)
 
-            val interrupt = queue.checkForInterrupt(110.0)
+            val interrupt = queue.checkForInterrupt(listOf(mod2))
             assertThat(interrupt).isNull()
         }
 
         @Test
         fun `lower priority does not interrupt`() {
-            queue.enqueue(event(text = "sharp", priority = NarrationEvent.PRIORITY_SHARP, triggerDistance = 100.0))
-            queue.nextEvent(100.0)
+            val sharp = event(text = "sharp", priority = NarrationEvent.PRIORITY_SHARP, curveDistance = 100.0)
+            val gentle = event(text = "gentle", priority = NarrationEvent.PRIORITY_GENTLE, curveDistance = 200.0)
 
-            queue.enqueue(event(text = "gentle", priority = NarrationEvent.PRIORITY_GENTLE, triggerDistance = 110.0))
+            queue.enqueue(sharp)
+            queue.enqueue(gentle)
+            queue.markPlaying(sharp)
 
-            val interrupt = queue.checkForInterrupt(110.0)
+            val interrupt = queue.checkForInterrupt(listOf(gentle))
             assertThat(interrupt).isNull()
         }
 
         @Test
         fun `no interrupt when nothing is playing`() {
-            val interrupt = queue.checkForInterrupt(100.0)
+            val sharp = event(text = "sharp", priority = NarrationEvent.PRIORITY_SHARP, curveDistance = 100.0)
+            queue.enqueue(sharp)
+            val interrupt = queue.checkForInterrupt(listOf(sharp))
             assertThat(interrupt).isNull()
-        }
-
-        @Test
-        fun `interrupt updates current event`() {
-            queue.enqueue(event(text = "gentle", priority = NarrationEvent.PRIORITY_GENTLE, triggerDistance = 100.0))
-            queue.nextEvent(100.0)
-
-            queue.enqueue(event(text = "hairpin", priority = NarrationEvent.PRIORITY_HAIRPIN, triggerDistance = 110.0))
-            queue.checkForInterrupt(110.0)
-
-            assertThat(queue.currentlyPlaying()!!.text).isEqualTo("hairpin")
         }
     }
 
@@ -248,58 +221,54 @@ class NarrationQueueTest {
     inner class DeliveryMarking {
 
         @Test
-        fun `delivered events are not re-triggered`() {
-            queue.enqueue(event(text = "curve", triggerDistance = 100.0))
-            val first = queue.nextEvent(100.0)
-            assertThat(first).isNotNull
+        fun `delivered events are not returned in eventsAhead`() {
+            val e = event(text = "curve", curveDistance = 100.0)
+            queue.enqueue(e)
+            queue.markPlaying(e)
             queue.markCurrentDelivered()
 
-            // Even though we pass the trigger distance again, should not get the event
-            val again = queue.nextEvent(100.0)
-            assertThat(again).isNull()
+            assertThat(queue.eventsAhead(0.0)).isEmpty()
         }
 
         @Test
         fun `pre-delivered events are ignored on enqueue`() {
-            queue.enqueue(event(text = "already done", triggerDistance = 100.0, delivered = true))
-            assertThat(queue.nextEvent(100.0)).isNull()
+            queue.enqueue(event(text = "already done", curveDistance = 100.0, delivered = true))
             assertThat(queue.pendingCount()).isEqualTo(0)
         }
 
         @Test
         fun `isDelivered returns true after marking`() {
-            val e = event(text = "test", triggerDistance = 100.0)
+            val e = event(text = "test", curveDistance = 100.0)
             queue.enqueue(e)
-            queue.nextEvent(100.0)
+            queue.markPlaying(e)
             queue.markCurrentDelivered()
             assertThat(queue.isDelivered(e)).isTrue()
         }
 
         @Test
         fun `isDelivered returns false for undelivered events`() {
-            val e = event(text = "test", triggerDistance = 100.0)
+            val e = event(text = "test", curveDistance = 100.0)
             queue.enqueue(e)
             assertThat(queue.isDelivered(e)).isFalse()
         }
 
         @Test
         fun `markDelivered by event removes it and prevents re-trigger`() {
-            val e = event(text = "test", triggerDistance = 100.0)
+            val e = event(text = "test", curveDistance = 100.0)
             queue.enqueue(e)
             queue.markDelivered(e)
-            assertThat(queue.nextEvent(100.0)).isNull()
+            assertThat(queue.eventsAhead(0.0)).isEmpty()
             assertThat(queue.isDelivered(e)).isTrue()
         }
 
         @Test
         fun `duplicate event with same key is not enqueued after delivery`() {
-            val e1 = event(text = "curve", triggerDistance = 100.0)
+            val e1 = event(text = "curve", curveDistance = 100.0)
             queue.enqueue(e1)
-            queue.nextEvent(100.0)
+            queue.markPlaying(e1)
             queue.markCurrentDelivered()
 
-            // Try to enqueue same event again
-            val e2 = event(text = "curve", triggerDistance = 100.0)
+            val e2 = event(text = "curve", curveDistance = 100.0)
             queue.enqueue(e2)
             assertThat(queue.pendingCount()).isEqualTo(0)
         }
@@ -315,8 +284,8 @@ class NarrationQueueTest {
 
         @Test
         fun `peek returns first pending event without removing`() {
-            queue.enqueue(event(text = "first", triggerDistance = 100.0))
-            queue.enqueue(event(text = "second", triggerDistance = 200.0))
+            queue.enqueue(event(text = "first", curveDistance = 100.0))
+            queue.enqueue(event(text = "second", curveDistance = 200.0))
 
             val peeked = queue.peekNext()
             assertThat(peeked!!.text).isEqualTo("first")
@@ -330,9 +299,9 @@ class NarrationQueueTest {
 
         @Test
         fun `pendingEvents returns all undelivered in order`() {
-            queue.enqueue(event(text = "a", triggerDistance = 100.0))
-            queue.enqueue(event(text = "b", triggerDistance = 200.0))
-            queue.enqueue(event(text = "c", triggerDistance = 300.0))
+            queue.enqueue(event(text = "a", curveDistance = 100.0))
+            queue.enqueue(event(text = "b", curveDistance = 200.0))
+            queue.enqueue(event(text = "c", curveDistance = 300.0))
 
             val pending = queue.pendingEvents()
             assertThat(pending).hasSize(3)
@@ -350,9 +319,11 @@ class NarrationQueueTest {
 
         @Test
         fun `clear removes everything`() {
-            queue.enqueue(event(text = "a", triggerDistance = 100.0))
-            queue.enqueue(event(text = "b", triggerDistance = 200.0))
-            queue.nextEvent(100.0)
+            queue.enqueue(event(text = "a", curveDistance = 100.0))
+            queue.enqueue(event(text = "b", curveDistance = 200.0))
+            val e = event(text = "a", curveDistance = 100.0)
+            queue.enqueue(e)
+            queue.markPlaying(e)
             queue.markCurrentDelivered()
 
             queue.clear()
@@ -361,18 +332,18 @@ class NarrationQueueTest {
             assertThat(queue.currentlyPlaying()).isNull()
 
             // After clear, previously delivered events can be re-enqueued
-            queue.enqueue(event(text = "a", triggerDistance = 100.0))
+            queue.enqueue(event(text = "a", curveDistance = 100.0))
             assertThat(queue.pendingCount()).isEqualTo(1)
         }
 
         @Test
         fun `clearPending keeps delivered set`() {
-            val e = event(text = "delivered", triggerDistance = 100.0)
+            val e = event(text = "delivered", curveDistance = 100.0)
             queue.enqueue(e)
-            queue.nextEvent(100.0)
+            queue.markPlaying(e)
             queue.markCurrentDelivered()
 
-            queue.enqueue(event(text = "pending", triggerDistance = 200.0))
+            queue.enqueue(event(text = "pending", curveDistance = 200.0))
 
             queue.clearPending()
 
@@ -380,7 +351,7 @@ class NarrationQueueTest {
             assertThat(queue.isDelivered(e)).isTrue()
 
             // Can't re-add the delivered event
-            queue.enqueue(event(text = "delivered", triggerDistance = 100.0))
+            queue.enqueue(event(text = "delivered", curveDistance = 100.0))
             assertThat(queue.pendingCount()).isEqualTo(0)
         }
     }
@@ -396,9 +367,9 @@ class NarrationQueueTest {
         @Test
         fun `enqueueAll adds multiple events`() {
             val events = listOf(
-                event(text = "a", triggerDistance = 100.0),
-                event(text = "b", triggerDistance = 200.0),
-                event(text = "c", triggerDistance = 300.0)
+                event(text = "a", curveDistance = 100.0),
+                event(text = "b", curveDistance = 200.0),
+                event(text = "c", curveDistance = 300.0)
             )
             queue.enqueueAll(events)
             assertThat(queue.pendingCount()).isEqualTo(3)
@@ -407,9 +378,9 @@ class NarrationQueueTest {
         @Test
         fun `enqueueAll maintains order`() {
             val events = listOf(
-                event(text = "c", triggerDistance = 300.0),
-                event(text = "a", triggerDistance = 100.0),
-                event(text = "b", triggerDistance = 200.0)
+                event(text = "c", curveDistance = 300.0),
+                event(text = "a", curveDistance = 100.0),
+                event(text = "b", curveDistance = 200.0)
             )
             queue.enqueueAll(events)
             val pending = queue.pendingEvents()
@@ -439,7 +410,7 @@ class NarrationQueueTest {
                             queue.enqueue(
                                 event(
                                     text = "t${t}_e${i}",
-                                    triggerDistance = (t * eventsPerThread + i).toDouble()
+                                    curveDistance = (t * eventsPerThread + i).toDouble()
                                 )
                             )
                         }
@@ -454,50 +425,6 @@ class NarrationQueueTest {
 
             assertThat(queue.pendingCount()).isEqualTo(threadCount * eventsPerThread)
         }
-
-        @Test
-        fun `concurrent enqueue and dequeue is safe`() {
-            val eventCount = 500
-            val executor = Executors.newFixedThreadPool(4)
-            val enqueueLatch = CountDownLatch(1)
-            val dequeueLatch = CountDownLatch(1)
-
-            // Enqueue thread
-            executor.submit {
-                try {
-                    for (i in 0 until eventCount) {
-                        queue.enqueue(
-                            event(text = "e$i", triggerDistance = i.toDouble())
-                        )
-                    }
-                } finally {
-                    enqueueLatch.countDown()
-                }
-            }
-
-            // Dequeue thread
-            executor.submit {
-                try {
-                    enqueueLatch.await(5, TimeUnit.SECONDS)
-                    var progress = 0.0
-                    while (progress < eventCount) {
-                        val next = queue.nextEvent(progress)
-                        if (next != null) {
-                            queue.markCurrentDelivered()
-                        }
-                        progress += 1.0
-                    }
-                } finally {
-                    dequeueLatch.countDown()
-                }
-            }
-
-            dequeueLatch.await(10, TimeUnit.SECONDS)
-            executor.shutdown()
-
-            // No exceptions should have been thrown
-            // All events should be delivered or pending
-        }
     }
 
     // ========================================================================
@@ -510,58 +437,41 @@ class NarrationQueueTest {
 
         @Test
         fun `driving through a series of curves`() {
-            // Simulate a route with 3 curves at different distances
-            queue.enqueue(event(text = "Left curve ahead, moderate", priority = NarrationEvent.PRIORITY_MODERATE, triggerDistance = 100.0))
-            queue.enqueue(event(text = "Sharp right ahead, slow to 40", priority = NarrationEvent.PRIORITY_SHARP, triggerDistance = 300.0))
-            queue.enqueue(event(text = "Hairpin left ahead, slow to 20", priority = NarrationEvent.PRIORITY_HAIRPIN, triggerDistance = 600.0))
+            val curve1 = event(text = "Left curve ahead, moderate", priority = NarrationEvent.PRIORITY_MODERATE, curveDistance = 500.0)
+            val curve2 = event(text = "Sharp right ahead, slow to 40", priority = NarrationEvent.PRIORITY_SHARP, curveDistance = 1000.0)
+            val curve3 = event(text = "Hairpin left ahead, slow to 20", priority = NarrationEvent.PRIORITY_HAIRPIN, curveDistance = 1500.0)
 
-            // Driver approaches first curve
-            var next = queue.nextEvent(100.0)
-            assertThat(next!!.text).isEqualTo("Left curve ahead, moderate")
+            queue.enqueue(curve1)
+            queue.enqueue(curve2)
+            queue.enqueue(curve3)
+
+            // Driver approaching first curve — it's ahead
+            var ahead = queue.eventsAhead(300.0)
+            assertThat(ahead).hasSize(3)
+
+            // Mark first as playing and delivered
+            queue.markPlaying(curve1)
             queue.markCurrentDelivered()
 
-            // Driver approaches second curve
-            next = queue.nextEvent(300.0)
-            assertThat(next!!.text).isEqualTo("Sharp right ahead, slow to 40")
-            queue.markCurrentDelivered()
-
-            // Driver approaches third curve
-            next = queue.nextEvent(600.0)
-            assertThat(next!!.text).isEqualTo("Hairpin left ahead, slow to 20")
-            queue.markCurrentDelivered()
-
-            // All delivered, nothing more
-            next = queue.nextEvent(1000.0)
-            assertThat(next).isNull()
-        }
-
-        @Test
-        fun `hairpin interrupts moderate narration in progress`() {
-            queue.enqueue(event(text = "Left curve ahead, moderate", priority = NarrationEvent.PRIORITY_MODERATE, triggerDistance = 100.0))
-            queue.enqueue(event(text = "Hairpin right ahead, slow to 20", priority = NarrationEvent.PRIORITY_HAIRPIN, triggerDistance = 110.0))
-
-            // Start moderate narration
-            val moderate = queue.nextEvent(100.0)
-            assertThat(moderate!!.text).isEqualTo("Left curve ahead, moderate")
-
-            // Hairpin becomes ready while moderate is still playing
-            val interrupt = queue.checkForInterrupt(110.0)
-            assertThat(interrupt).isNotNull
-            assertThat(interrupt!!.text).isEqualTo("Hairpin right ahead, slow to 20")
+            // Only 2 left
+            ahead = queue.eventsAhead(600.0)
+            assertThat(ahead).hasSize(2)
+            assertThat(ahead[0].text).isEqualTo("Sharp right ahead, slow to 40")
         }
 
         @Test
         fun `GPS jitter does not re-trigger delivered narrations`() {
-            queue.enqueue(event(text = "curve", triggerDistance = 100.0))
+            val e = event(text = "curve", curveDistance = 500.0)
+            queue.enqueue(e)
 
-            // First pass
-            queue.nextEvent(100.0)
+            // Play and deliver
+            queue.markPlaying(e)
             queue.markCurrentDelivered()
 
             // GPS jumps back then forward (jitter)
-            assertThat(queue.nextEvent(95.0)).isNull()
-            assertThat(queue.nextEvent(100.0)).isNull()
-            assertThat(queue.nextEvent(105.0)).isNull()
+            assertThat(queue.eventsAhead(450.0)).isEmpty()
+            assertThat(queue.eventsAhead(500.0)).isEmpty()
+            assertThat(queue.eventsAhead(550.0)).isEmpty()
         }
     }
 }

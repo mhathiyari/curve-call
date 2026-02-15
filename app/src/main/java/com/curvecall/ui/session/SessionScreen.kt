@@ -5,10 +5,18 @@ import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,32 +26,21 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.VolumeOff
-import androidx.compose.material.icons.filled.VolumeUp
-import androidx.compose.material3.Button
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -55,35 +52,32 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.curvecall.ui.session.components.LeanAngleIndicator
-import com.curvecall.ui.session.components.NarrationBanner
-import com.curvecall.ui.session.components.SpeedDisplay
-import com.curvecall.ui.session.components.UpcomingCurvesList
+import com.curvecall.engine.types.LatLon
+import com.curvecall.ui.map.SessionMap
+import com.curvecall.ui.session.components.SessionBottomBar
 import com.curvecall.ui.theme.CurveCallPrimary
-import com.curvecall.ui.theme.NarrationBannerWarning
+import com.curvecall.ui.theme.SeverityGentle
+import com.curvecall.ui.theme.SeverityModerate
 import com.curvecall.ui.theme.SeveritySharp
+import com.curvecall.ui.theme.NarrationBannerWarning
 
 /**
- * Active driving session screen (PRD Section 8.1 - Active Session Screen).
+ * Active driving session screen with full-screen map and overlay controls.
  *
- * Displays:
- * - Large current speed display (from GPS)
- * - Narration text banner (last spoken, large font, high contrast)
- * - Upcoming curves list (next 5 curves)
- * - Speed advisory display (prominent when active)
- * - Lean angle display (motorcycle mode)
- * - Controls: Play/Pause, Mute, Stop
- * - Verbosity quick-toggle
+ * Layout (Box layers):
+ * 1. Full-screen SessionMap (heading-up, GPS tracking, dynamic zoom)
+ * 2. Gradient scrim + top overlays (back button, verbosity chip, warnings)
+ * 3. Bottom bar (two-tier: speed/curve/controls)
  *
  * Keeps screen on via FLAG_KEEP_SCREEN_ON during active session.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SessionScreen(
     onNavigateBack: () -> Unit,
@@ -127,82 +121,81 @@ fun SessionScreen(
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = "Active Session",
-                        fontWeight = FontWeight.SemiBold
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = {
-                        viewModel.stopSession()
-                        onNavigateBack()
-                    }) {
-                        Icon(
-                            imageVector = Icons.Default.ArrowBack,
-                            contentDescription = "Back"
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Layer 1: Full-screen map with dynamic zoom
+        SessionMap(
+            routePoints = viewModel.interpolatedPoints,
+            routeSegments = viewModel.routeSegments,
+            currentPosition = if (uiState.currentLatitude != 0.0 || uiState.currentLongitude != 0.0)
+                LatLon(uiState.currentLatitude, uiState.currentLongitude) else null,
+            currentBearing = uiState.currentBearing,
+            currentAccuracy = uiState.currentAccuracy,
+            targetZoom = uiState.targetZoom,
+            modifier = Modifier.fillMaxSize()
+        )
+
+        // Layer 2: Gradient scrim for top area readability
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(140.dp)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Black.copy(alpha = 0.6f),
+                            Color.Black.copy(alpha = 0.3f),
+                            Color.Transparent
                         )
-                    }
-                },
-                actions = {
-                    // Verbosity quick-toggle
-                    VerbosityChip(
-                        verbosity = uiState.verbosity,
-                        onClick = { viewModel.cycleVerbosity() }
                     )
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
                 )
-            )
-        }
-    ) { paddingValues ->
+        )
+
+        // Layer 3: Top overlays
         Column(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
-            // Off-route warning banner
+            // Top control bar: back button + GPS signal + verbosity
+            TopControlBar(
+                verbosity = uiState.verbosity,
+                accuracy = uiState.currentAccuracy,
+                onBack = {
+                    viewModel.stopSession()
+                    onNavigateBack()
+                },
+                onCycleVerbosity = { viewModel.cycleVerbosity() }
+            )
+
+            // Off-route warning banner (high urgency)
             AnimatedVisibility(
                 visible = uiState.isOffRoute,
-                enter = fadeIn(),
-                exit = fadeOut()
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(SeveritySharp.copy(alpha = 0.15f))
-                        .padding(12.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "OFF ROUTE - Narration paused",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = SeveritySharp,
-                        letterSpacing = 1.sp
+                enter = slideInVertically(
+                    initialOffsetY = { -it },
+                    animationSpec = spring(
+                        dampingRatio = 0.7f,
+                        stiffness = 300f
                     )
-                }
+                ) + fadeIn(),
+                exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut()
+            ) {
+                OffRouteBanner()
             }
 
             // Sparse data warning
             AnimatedVisibility(
                 visible = uiState.isSparseDataWarning && !uiState.isOffRoute,
-                enter = fadeIn(),
-                exit = fadeOut()
+                enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+                exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut()
             ) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(NarrationBannerWarning.copy(alpha = 0.15f))
+                        .padding(top = 8.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(NarrationBannerWarning.copy(alpha = 0.85f))
                         .padding(12.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -210,174 +203,155 @@ fun SessionScreen(
                         text = "Low data quality - Curve info may be incomplete",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = NarrationBannerWarning
+                        color = Color.White
                     )
                 }
             }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Speed Display
-            SpeedDisplay(
-                currentSpeedKmh = uiState.currentSpeedKmh,
-                currentSpeedMph = uiState.currentSpeedMph,
-                advisorySpeedKmh = uiState.activeAdvisorySpeedKmh,
-                advisorySpeedMph = uiState.activeAdvisorySpeedMph,
-                usesMph = uiState.usesMph
-            )
-
-            // Lean Angle (motorcycle mode)
-            if (uiState.isMotorcycleMode && uiState.activeLeanAngle != null) {
-                LeanAngleIndicator(
-                    leanAngleDeg = uiState.activeLeanAngle
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Narration Banner
-            NarrationBanner(
-                narrationText = uiState.lastNarrationText,
-                isWarning = uiState.isOffRoute || uiState.isSparseDataWarning
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Route progress
-            if (uiState.routeProgressPercent > 0f) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    LinearProgressIndicator(
-                        progress = uiState.routeProgressPercent / 100f,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(4.dp)
-                            .clip(RoundedCornerShape(2.dp)),
-                        color = CurveCallPrimary,
-                        trackColor = MaterialTheme.colorScheme.surfaceVariant,
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = formatRemainingDistance(uiState.distanceRemainingM, uiState.usesMph),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
-                        modifier = Modifier.fillMaxWidth(),
-                        textAlign = TextAlign.End
-                    )
-                }
-                Spacer(modifier = Modifier.height(12.dp))
-            }
-
-            // Upcoming Curves List
-            UpcomingCurvesList(
-                upcomingCurves = uiState.upcomingCurves,
-                usesMph = uiState.usesMph
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Controls: Play/Pause, Mute, Stop
-            SessionControls(
-                sessionState = uiState.sessionState,
-                isMuted = uiState.isMuted,
-                onPlayPause = {
-                    when (uiState.sessionState) {
-                        SessionViewModel.SessionState.PLAYING -> viewModel.pauseSession()
-                        SessionViewModel.SessionState.PAUSED -> viewModel.resumeSession()
-                        SessionViewModel.SessionState.STOPPED -> viewModel.startSession()
-                        SessionViewModel.SessionState.IDLE -> viewModel.startSession()
-                    }
-                },
-                onMute = { viewModel.toggleMute() },
-                onStop = {
-                    viewModel.stopSession()
-                    onNavigateBack()
-                }
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
         }
+
+        // Layer 4: Bottom bar
+        SessionBottomBar(
+            uiState = uiState,
+            onPlayPause = {
+                when (uiState.sessionState) {
+                    SessionViewModel.SessionState.PLAYING -> viewModel.pauseSession()
+                    SessionViewModel.SessionState.PAUSED -> viewModel.resumeSession()
+                    SessionViewModel.SessionState.STOPPED -> viewModel.startSession()
+                    SessionViewModel.SessionState.IDLE -> viewModel.startSession()
+                }
+            },
+            onMute = { viewModel.toggleMute() },
+            onStop = {
+                viewModel.stopSession()
+                onNavigateBack()
+            },
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+        )
     }
 }
 
 /**
- * Session control buttons: Play/Pause, Mute, Stop.
- * All controls are single-tap for safety while driving.
+ * Off-route warning banner with pulsing border for urgency.
  */
 @Composable
-private fun SessionControls(
-    sessionState: SessionViewModel.SessionState,
-    isMuted: Boolean,
-    onPlayPause: () -> Unit,
-    onMute: () -> Unit,
-    onStop: () -> Unit
-) {
-    Row(
+private fun OffRouteBanner() {
+    val infiniteTransition = rememberInfiniteTransition(label = "offroute_pulse")
+    val borderAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.4f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(700),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "offroute_border"
+    )
+
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 16.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically
+            .padding(top = 8.dp)
+            .border(
+                width = 2.dp,
+                color = SeveritySharp.copy(alpha = borderAlpha),
+                shape = RoundedCornerShape(12.dp)
+            )
+            .clip(RoundedCornerShape(12.dp))
+            .background(SeveritySharp.copy(alpha = 0.85f))
+            .padding(14.dp),
+        contentAlignment = Alignment.Center
     ) {
-        // Mute / Unmute
-        FilledIconButton(
-            onClick = onMute,
-            modifier = Modifier.size(56.dp),
-            colors = IconButtonDefaults.filledIconButtonColors(
-                containerColor = if (isMuted) SeveritySharp.copy(alpha = 0.2f)
-                else MaterialTheme.colorScheme.surfaceVariant
-            )
-        ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
-                imageVector = if (isMuted) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
-                contentDescription = if (isMuted) "Unmute" else "Mute",
-                modifier = Modifier.size(28.dp),
-                tint = if (isMuted) SeveritySharp else MaterialTheme.colorScheme.onSurfaceVariant
+                Icons.Default.Warning,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(20.dp)
             )
-        }
-
-        // Play / Pause (primary, larger)
-        FilledIconButton(
-            onClick = onPlayPause,
-            modifier = Modifier.size(72.dp),
-            colors = IconButtonDefaults.filledIconButtonColors(
-                containerColor = CurveCallPrimary
-            )
-        ) {
-            val icon = when (sessionState) {
-                SessionViewModel.SessionState.PLAYING -> Icons.Default.Pause
-                else -> Icons.Default.PlayArrow
-            }
-            Icon(
-                imageVector = icon,
-                contentDescription = when (sessionState) {
-                    SessionViewModel.SessionState.PLAYING -> "Pause"
-                    else -> "Play"
-                },
-                modifier = Modifier.size(36.dp),
-                tint = MaterialTheme.colorScheme.onPrimary
-            )
-        }
-
-        // Stop
-        FilledIconButton(
-            onClick = onStop,
-            modifier = Modifier.size(56.dp),
-            colors = IconButtonDefaults.filledIconButtonColors(
-                containerColor = SeveritySharp.copy(alpha = 0.2f)
-            )
-        ) {
-            Icon(
-                imageVector = Icons.Default.Stop,
-                contentDescription = "Stop session",
-                modifier = Modifier.size(28.dp),
-                tint = SeveritySharp
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = "OFF ROUTE",
+                fontWeight = FontWeight.Black,
+                fontSize = 15.sp,
+                color = Color.White,
+                letterSpacing = 2.sp
             )
         }
     }
 }
 
 /**
- * Verbosity level chip displayed in the top bar for quick cycling.
+ * Top control bar with back button, GPS signal indicator, and verbosity toggle.
+ * Buttons have their own dark scrim backgrounds for map visibility.
+ */
+@Composable
+private fun TopControlBar(
+    verbosity: Int,
+    accuracy: Float,
+    onBack: () -> Unit,
+    onCycleVerbosity: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Back button (48dp touch target)
+        IconButton(
+            onClick = onBack,
+            modifier = Modifier
+                .size(48.dp)
+                .clip(CircleShape)
+                .background(Color.Black.copy(alpha = 0.5f)),
+            colors = IconButtonDefaults.iconButtonColors(
+                contentColor = Color.White
+            )
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "End session",
+                modifier = Modifier.size(22.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.width(8.dp))
+
+        // GPS signal quality dot
+        GpsSignalDot(accuracy = accuracy)
+
+        Spacer(modifier = Modifier.weight(1f))
+
+        // Verbosity chip
+        VerbosityChip(
+            verbosity = verbosity,
+            onClick = onCycleVerbosity
+        )
+    }
+}
+
+/**
+ * Small colored dot indicating GPS signal quality.
+ */
+@Composable
+private fun GpsSignalDot(accuracy: Float) {
+    val color = when {
+        accuracy <= 0f -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+        accuracy <= 5f -> SeverityGentle
+        accuracy <= 15f -> CurveCallPrimary
+        accuracy <= 30f -> SeverityModerate
+        else -> SeveritySharp
+    }
+
+    Box(
+        modifier = Modifier
+            .size(10.dp)
+            .clip(CircleShape)
+            .background(color)
+    )
+}
+
+/**
+ * Verbosity level chip with dark scrim background.
  */
 @Composable
 private fun VerbosityChip(
@@ -393,8 +367,12 @@ private fun VerbosityChip(
 
     FilledTonalButton(
         onClick = onClick,
-        modifier = Modifier.height(32.dp),
-        contentPadding = ButtonDefaults.TextButtonContentPadding
+        modifier = Modifier.height(34.dp),
+        contentPadding = ButtonDefaults.TextButtonContentPadding,
+        colors = ButtonDefaults.filledTonalButtonColors(
+            containerColor = Color.Black.copy(alpha = 0.5f),
+            contentColor = Color.White
+        )
     ) {
         Text(
             text = label,

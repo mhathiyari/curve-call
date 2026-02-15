@@ -131,7 +131,8 @@ class AndroidTtsEngine(private val context: Context) : TtsEngine {
             NarrationEvent(
                 text = text,
                 priority = priority,
-                triggerDistanceFromStart = 0.0,
+                curveDistanceFromStart = 0.0,
+                advisorySpeedMs = null,
                 associatedCurve = null
             )
         )

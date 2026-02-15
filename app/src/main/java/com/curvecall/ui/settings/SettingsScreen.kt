@@ -51,6 +51,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.curvecall.engine.types.DrivingMode
 import com.curvecall.engine.types.SpeedUnit
+import com.curvecall.narration.types.TimingProfile
 import com.curvecall.ui.theme.CurveCallPrimary
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -220,19 +221,32 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Look-ahead time slider (5-15 seconds)
+            // Timing Profile: Relaxed / Normal / Sporty
             SettingLabel(
-                "Look-Ahead Time",
-                description = "How far ahead to announce curves. " +
-                    "Default: ${if (uiState.drivingMode == DrivingMode.CAR) "8s (car)" else "10s (motorcycle)"}"
+                "Timing Profile",
+                description = "Controls how early prompts arrive. " +
+                    "Relaxed = early prompts, Sporty = just-in-time."
             )
-            SliderWithValue(
-                value = uiState.lookAheadTime.toFloat(),
-                onValueChange = { viewModel.setLookAheadTime(it.toDouble()) },
-                valueRange = 5.0f..15.0f,
-                steps = 9,
-                valueLabel = { "${it.roundToInt()}s" }
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                ChoiceButton(
+                    label = "Relaxed",
+                    selected = uiState.timingProfile == TimingProfile.RELAXED,
+                    onClick = { viewModel.setTimingProfile(TimingProfile.RELAXED) }
+                )
+                ChoiceButton(
+                    label = "Normal",
+                    selected = uiState.timingProfile == TimingProfile.NORMAL,
+                    onClick = { viewModel.setTimingProfile(TimingProfile.NORMAL) }
+                )
+                ChoiceButton(
+                    label = "Sporty",
+                    selected = uiState.timingProfile == TimingProfile.SPORTY,
+                    onClick = { viewModel.setTimingProfile(TimingProfile.SPORTY) }
+                )
+            }
 
             SettingDivider()
 

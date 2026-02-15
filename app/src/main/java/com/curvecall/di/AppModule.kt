@@ -7,6 +7,7 @@ import com.curvecall.data.location.LocationProvider
 import com.curvecall.data.osm.OverpassClient
 import com.curvecall.data.preferences.UserPreferences
 import com.curvecall.data.session.SessionDataHolder
+import com.curvecall.data.tiles.TileDownloader
 import com.curvecall.engine.RouteAnalyzer
 import com.curvecall.narration.NarrationManager
 import com.curvecall.narration.TemplateEngine
@@ -96,6 +97,14 @@ object AppModule {
     @Singleton
     fun provideSessionDataHolder(): SessionDataHolder {
         return SessionDataHolder()
+    }
+
+    @Provides
+    @Singleton
+    fun provideTileDownloader(
+        okHttpClient: OkHttpClient
+    ): TileDownloader {
+        return TileDownloader(okHttpClient)
     }
 
     // -- Engine --

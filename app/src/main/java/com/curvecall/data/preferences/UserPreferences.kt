@@ -13,6 +13,7 @@ import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.curvecall.engine.types.DrivingMode
 import com.curvecall.engine.types.SpeedUnit
+import com.curvecall.narration.types.TimingProfile
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.runBlocking
@@ -42,8 +43,7 @@ class UserPreferences @Inject constructor(
         val VERBOSITY = intPreferencesKey("verbosity")
         val LATERAL_G = doublePreferencesKey("lateral_g")
         val LATERAL_G_CUSTOM = booleanPreferencesKey("lateral_g_custom")
-        val LOOK_AHEAD_TIME = doublePreferencesKey("look_ahead_time")
-        val LOOK_AHEAD_CUSTOM = booleanPreferencesKey("look_ahead_custom")
+        val TIMING_PROFILE = stringPreferencesKey("timing_profile")
         val TTS_SPEECH_RATE = floatPreferencesKey("tts_speech_rate")
         val TTS_VOICE_NAME = stringPreferencesKey("tts_voice_name")
         val NARRATE_STRAIGHTS = booleanPreferencesKey("narrate_straights")
@@ -74,12 +74,7 @@ class UserPreferences @Inject constructor(
                     DrivingMode.MOTORCYCLE -> 0.25
                 }
             }
-            if (prefs[Keys.LOOK_AHEAD_CUSTOM] != true) {
-                prefs[Keys.LOOK_AHEAD_TIME] = when (mode) {
-                    DrivingMode.CAR -> 8.0
-                    DrivingMode.MOTORCYCLE -> 10.0
-                }
-            }
+            // Timing profile is mode-independent (Relaxed/Normal/Sporty)
         }
     }
 
@@ -124,21 +119,18 @@ class UserPreferences @Inject constructor(
         }
     }
 
-    // -- Look-Ahead Time --
+    // -- Timing Profile --
 
-    val lookAheadTime: Flow<Double> = dataStore.data.map { prefs ->
-        prefs[Keys.LOOK_AHEAD_TIME] ?: when (prefs[Keys.MODE]) {
-            "MOTORCYCLE" -> 10.0
-            else -> 8.0
+    val timingProfile: Flow<TimingProfile> = dataStore.data.map { prefs ->
+        when (prefs[Keys.TIMING_PROFILE]) {
+            "RELAXED" -> TimingProfile.RELAXED
+            "SPORTY" -> TimingProfile.SPORTY
+            else -> TimingProfile.NORMAL
         }
     }
 
-    suspend fun setLookAheadTime(value: Double) {
-        require(value in 5.0..15.0) { "Look-ahead time must be between 5 and 15 seconds" }
-        dataStore.edit {
-            it[Keys.LOOK_AHEAD_TIME] = value
-            it[Keys.LOOK_AHEAD_CUSTOM] = true
-        }
+    suspend fun setTimingProfile(profile: TimingProfile) {
+        dataStore.edit { it[Keys.TIMING_PROFILE] = profile.name }
     }
 
     // -- TTS Speech Rate --

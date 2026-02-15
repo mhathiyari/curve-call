@@ -12,11 +12,13 @@ import com.curvecall.engine.types.CurveSegment
 import com.curvecall.engine.types.DrivingMode
 import com.curvecall.engine.types.LatLon
 import com.curvecall.engine.types.RouteSegment
+import com.curvecall.engine.types.Severity
 import com.curvecall.engine.types.SpeedUnit
 import com.curvecall.narration.NarrationManager
 import com.curvecall.narration.TtsEngine
 import com.curvecall.narration.types.NarrationConfig
 import com.curvecall.narration.types.NarrationEvent
+import com.curvecall.narration.types.TimingProfile
 import com.curvecall.service.SessionForegroundService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -33,8 +35,8 @@ import javax.inject.Inject
  *
  * Wires together:
  * - GPS location flow -> MapMatcher -> NarrationManager -> TtsEngine
- * - Exposes upcoming curves, current narration, speed, and session state
- *   as StateFlows for the Compose UI.
+ * - Exposes upcoming curves, current narration, speed, GPS position/bearing,
+ *   and session state as StateFlows for the Compose UI.
  *
  * Handles play/pause/stop lifecycle for the narration session.
  *
@@ -89,7 +91,14 @@ class SessionViewModel @Inject constructor(
         val isMotorcycleMode: Boolean = false,
         val usesMph: Boolean = false,
         val routeProgressPercent: Float = 0f,
-        val distanceRemainingM: Double = 0.0
+        val distanceRemainingM: Double = 0.0,
+        // Map state — updated on each GPS tick
+        val currentLatitude: Double = 0.0,
+        val currentLongitude: Double = 0.0,
+        val currentBearing: Float = 0f,
+        val currentAccuracy: Float = 0f,
+        // Dynamic zoom — computed from speed + curve proximity + severity
+        val targetZoom: Double = 16.0
     )
 
     /**
@@ -104,11 +113,16 @@ class SessionViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(SessionUiState())
     val uiState: StateFlow<SessionUiState> = _uiState.asStateFlow()
 
-    /** The analyzed route segments from the engine. */
-    private var routeSegments: List<RouteSegment> = emptyList()
+    /** The analyzed route segments from the engine (exposed for map overlay). */
+    var routeSegments: List<RouteSegment> = emptyList()
+        private set
 
     /** The original route points for map matching. */
     private var routePoints: List<LatLon> = emptyList()
+
+    /** The interpolated points for map overlay rendering. */
+    var interpolatedPoints: List<LatLon> = emptyList()
+        private set
 
     /** Total route distance in meters. */
     private var totalRouteDistanceM: Double = 0.0
@@ -125,12 +139,17 @@ class SessionViewModel @Inject constructor(
     /** Current narration config built from user preferences. */
     private var currentNarrationConfig = NarrationConfig()
 
+    /** Smoothed bearing for heading-up map (low-pass filter). */
+    private var smoothedBearing: Float = 0f
+    private val bearingSmoothingFactor = 0.15f
+
     init {
         // Load route data from the shared session data holder (set by HomeViewModel)
         val segments = sessionDataHolder.routeSegments
         val points = sessionDataHolder.routePoints
+        val interpolated = sessionDataHolder.interpolatedPoints
         if (segments != null && points != null) {
-            initializeRoute(segments, points)
+            initializeRoute(segments, points, interpolated ?: points)
         }
     }
 
@@ -140,9 +159,14 @@ class SessionViewModel @Inject constructor(
      * Initialize the session with pre-analyzed route data from the HomeViewModel.
      * This should be called before startSession().
      */
-    fun initializeRoute(segments: List<RouteSegment>, points: List<LatLon>) {
+    fun initializeRoute(
+        segments: List<RouteSegment>,
+        points: List<LatLon>,
+        interpolated: List<LatLon> = points
+    ) {
         routeSegments = segments
         routePoints = points
+        interpolatedPoints = interpolated
 
         // Create MapMatcher with route-specific data
         mapMatcher = MapMatcher(points, segments)
@@ -171,11 +195,12 @@ class SessionViewModel @Inject constructor(
             )
 
             // Build initial narration config from preferences
+            val timingProfile = userPreferences.timingProfile.first()
             currentNarrationConfig = NarrationConfig(
                 mode = mode,
                 verbosity = verbosity,
                 units = units,
-                lookAheadSeconds = userPreferences.lookAheadTime.first(),
+                timingProfile = timingProfile,
                 narrateStraights = userPreferences.narrateStraights.first(),
                 narrateLeanAngle = userPreferences.leanAngleNarration.first(),
                 narrateSurface = userPreferences.surfaceWarnings.first()
@@ -194,8 +219,19 @@ class SessionViewModel @Inject constructor(
         // Start foreground service for background GPS + TTS
         SessionForegroundService.start(appContext)
 
-        // Initialize TTS engine
+        // Initialize TTS engine and set up completion callback for cooldown tracking
         ttsEngine.initialize()
+        ttsEngine.setTtsListener(object : TtsEngine.TtsListener {
+            override fun onSpeechComplete(event: NarrationEvent) {
+                narrationManager.onNarrationComplete()
+            }
+            override fun onSpeechInterrupted(interruptedEvent: NarrationEvent, interruptingEvent: NarrationEvent) {
+                narrationManager.onNarrationComplete()
+            }
+            override fun onSpeechError(event: NarrationEvent, error: String) {
+                narrationManager.onNarrationComplete()
+            }
+        })
 
         // Set up narration manager: register listener and load route
         narrationManager.setListener(this)
@@ -302,6 +338,14 @@ class SessionViewModel @Inject constructor(
         }
     }
 
+    override fun onUrgentAlert(event: NarrationEvent) {
+        _uiState.value = _uiState.value.copy(lastNarrationText = event.text)
+        if (!_uiState.value.isMuted) {
+            // Urgent alerts always interrupt — use QUEUE_FLUSH via interrupt()
+            ttsEngine.interrupt(event)
+        }
+    }
+
     override fun onPaused(reason: String) {
         _uiState.value = _uiState.value.copy(lastNarrationText = reason)
     }
@@ -329,6 +373,17 @@ class SessionViewModel @Inject constructor(
         val speedKmh = speedMs * 3.6
         val speedMph = speedMs * 2.23694
 
+        // Bearing: smooth with low-pass filter to prevent jitter at low speeds
+        val rawBearing = if (location.hasBearing()) location.bearing else smoothedBearing
+        smoothedBearing = if (speedMs > 1.0) {
+            // Apply low-pass filter for smooth heading-up rotation
+            val delta = normalizeAngleDelta(rawBearing - smoothedBearing)
+            smoothedBearing + delta * bearingSmoothingFactor
+        } else {
+            // At very low speed, don't update bearing (GPS bearing is unreliable)
+            smoothedBearing
+        }
+
         // Map match to route (single argument - route data is in the MapMatcher instance)
         val matchResult = matcher.matchToRoute(gpsLatLon)
 
@@ -339,7 +394,11 @@ class SessionViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(
                     isOffRoute = true,
                     offRouteDistanceM = distFromRoute,
-                    lastNarrationText = "Off route -- curve narration paused"
+                    lastNarrationText = "Off route -- curve narration paused",
+                    currentLatitude = location.latitude,
+                    currentLongitude = location.longitude,
+                    currentBearing = smoothedBearing,
+                    currentAccuracy = location.accuracy
                 )
                 if (!_uiState.value.isMuted) {
                     ttsEngine.speak("Off route. Curve narration paused.", priority = 10)
@@ -389,6 +448,10 @@ class SessionViewModel @Inject constructor(
         val activeAdvisoryMph = activeCurve?.advisorySpeedMs?.let { it * 2.23694 }
         val activeLean = if (_uiState.value.isMotorcycleMode) activeCurve?.leanAngleDeg else null
 
+        // Compute dynamic zoom from speed + next curve proximity/severity
+        val nextUpcoming = _uiState.value.upcomingCurves.firstOrNull()
+        val targetZoom = computeTargetZoom(speedKmh, nextUpcoming)
+
         _uiState.value = _uiState.value.copy(
             currentSpeedKmh = speedKmh,
             currentSpeedMph = speedMph,
@@ -397,8 +460,65 @@ class SessionViewModel @Inject constructor(
             activeLeanAngle = activeLean,
             isSparseDataWarning = isSparse,
             routeProgressPercent = progressPercent,
-            distanceRemainingM = (totalRouteDistanceM - routeProgress).coerceAtLeast(0.0)
+            distanceRemainingM = (totalRouteDistanceM - routeProgress).coerceAtLeast(0.0),
+            currentLatitude = location.latitude,
+            currentLongitude = location.longitude,
+            currentBearing = smoothedBearing,
+            currentAccuracy = location.accuracy,
+            targetZoom = targetZoom
         )
+    }
+
+    /**
+     * Compute dynamic zoom level based on current speed and proximity to the next curve.
+     *
+     * Strategy:
+     * - Speed-based baseline: zoom out at higher speeds so the driver sees more road ahead.
+     * - Curve proximity boost: zoom in when approaching a curve for detail.
+     * - Severity modifier: sharper curves get more zoom-in.
+     *
+     * Result is clamped to [14.0, 18.0] and smoothed to avoid jitter.
+     */
+    private fun computeTargetZoom(speedKmh: Double, nextCurve: UpcomingCurve?): Double {
+        // Speed-based baseline: linear interpolation from 17.5 (stopped) to 14.5 (120+ km/h)
+        val speedFactor = (speedKmh / 120.0).coerceIn(0.0, 1.0)
+        val speedZoom = 17.5 - speedFactor * 3.0 // 17.5 at 0 km/h, 14.5 at 120 km/h
+
+        if (nextCurve == null) return speedZoom.coerceIn(14.0, 18.0)
+
+        val distanceM = nextCurve.distanceToM
+        val severity = nextCurve.curveSegment.severity
+
+        // Severity bonus: how much extra zoom-in for this curve type
+        val severityBonus = when (severity) {
+            Severity.GENTLE -> 0.0
+            Severity.MODERATE -> 0.3
+            Severity.FIRM -> 0.5
+            Severity.SHARP -> 0.8
+            Severity.HAIRPIN -> 1.2
+        }
+
+        // Proximity factor: ramp up as we get closer (0.0 at 500m+, 1.0 at 0m)
+        val proximityFactor = when {
+            distanceM >= 500.0 -> 0.0
+            distanceM <= 0.0 -> 1.0
+            else -> 1.0 - (distanceM / 500.0)
+        }
+
+        // Total zoom = speed baseline + (severity bonus * proximity ramp)
+        val zoom = speedZoom + severityBonus * proximityFactor
+
+        return zoom.coerceIn(14.0, 18.0)
+    }
+
+    /**
+     * Normalize an angle delta to [-180, 180] for smooth interpolation.
+     */
+    private fun normalizeAngleDelta(delta: Float): Float {
+        var d = delta % 360f
+        if (d > 180f) d -= 360f
+        if (d < -180f) d += 360f
+        return d
     }
 
     /**

@@ -74,18 +74,23 @@ class NarrationQueue {
     }
 
     /**
-     * Get all pending events that are ahead of the current position.
+     * Get all pending events that are ahead of (or recently passed by) the driver.
      *
-     * Returns events whose curve entry point is ahead of (or at) the given progress,
-     * in queue order, excluding delivered events.
+     * Returns events whose curve entry point is at or ahead of the given progress
+     * minus an optional [pastBufferMeters], in queue order, excluding delivered events.
+     *
+     * The past buffer prevents missed narrations when the driver passes a curve's
+     * entry point while a previous narration is still playing (TTS busy). Without
+     * the buffer, such events would be silently dropped.
      *
      * @param currentProgressMeters Current distance along the route from start.
-     * @return List of pending events ahead of current position.
+     * @param pastBufferMeters How far behind the driver to include (default 0).
+     * @return List of pending events within the lookback window.
      */
-    fun eventsAhead(currentProgressMeters: Double): List<NarrationEvent> {
+    fun eventsAhead(currentProgressMeters: Double, pastBufferMeters: Double = 0.0): List<NarrationEvent> {
         lock.withLock {
             return pendingEvents.filter { event ->
-                event.curveDistanceFromStart >= currentProgressMeters &&
+                event.curveDistanceFromStart >= (currentProgressMeters - pastBufferMeters) &&
                     eventKey(event) !in deliveredKeys
             }
         }

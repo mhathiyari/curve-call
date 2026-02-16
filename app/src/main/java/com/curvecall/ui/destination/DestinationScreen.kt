@@ -70,7 +70,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.curvecall.ui.theme.CurveCallPrimary
-import com.curvecall.ui.theme.CurveCallPrimaryDim
 import com.curvecall.ui.theme.DarkBackground
 import com.curvecall.ui.theme.DarkSurfaceElevated
 import com.curvecall.ui.theme.DarkSurfaceHighest
@@ -117,14 +116,12 @@ private val DarkTileSource = object : OnlineTileSourceBase(
  *
  * @param onNavigateBack Called when the back button is pressed
  * @param onDestinationConfirmed Called with (lat, lon, name) when the user confirms a destination
- * @param onLoadGpx Called when the user taps "Load GPX File" (preserves existing flow)
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DestinationScreen(
     onNavigateBack: () -> Unit,
     onDestinationConfirmed: (lat: Double, lon: Double, name: String) -> Unit,
-    onLoadGpx: () -> Unit,
     viewModel: DestinationViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -244,13 +241,12 @@ fun DestinationScreen(
                 }
             }
 
-            // -- Bottom section: Recents, Favorites, Load GPX --
+            // -- Bottom section: Recents, Favorites --
             BottomSection(
                 recentDestinations = uiState.recentDestinations,
                 favoriteDestinations = uiState.favoriteDestinations,
                 onDestinationSelected = viewModel::onSavedDestinationSelected,
                 onToggleFavorite = viewModel::toggleFavorite,
-                onLoadGpx = onLoadGpx,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(200.dp)
@@ -275,18 +271,24 @@ private fun SearchBar(
         value = query,
         onValueChange = onQueryChanged,
         modifier = modifier
+            .height(56.dp)
+            .border(
+                width = 1.5.dp,
+                color = CurveCallPrimary.copy(alpha = 0.5f),
+                shape = shape
+            )
             .clip(shape),
         placeholder = {
             Text(
                 text = "Search destination...",
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f)
+                color = Color.White.copy(alpha = 0.6f)
             )
         },
         leadingIcon = {
             Icon(
                 imageVector = Icons.Default.Search,
                 contentDescription = null,
-                tint = CurveCallPrimary.copy(alpha = 0.7f)
+                tint = CurveCallPrimary
             )
         },
         trailingIcon = {
@@ -301,15 +303,15 @@ private fun SearchBar(
                     Icon(
                         imageVector = Icons.Default.Close,
                         contentDescription = "Clear",
-                        tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
+                        tint = Color.White.copy(alpha = 0.5f)
                     )
                 }
             }
         },
         singleLine = true,
         colors = TextFieldDefaults.colors(
-            focusedContainerColor = DarkSurfaceElevated,
-            unfocusedContainerColor = DarkSurfaceElevated,
+            focusedContainerColor = Color(0xFF333333),
+            unfocusedContainerColor = Color(0xFF2E2E2E),
             focusedTextColor = Color.White,
             unfocusedTextColor = Color.White,
             cursorColor = CurveCallPrimary,
@@ -616,7 +618,6 @@ private fun BottomSection(
     favoriteDestinations: List<DestinationViewModel.SavedDestination>,
     onDestinationSelected: (DestinationViewModel.SavedDestination) -> Unit,
     onToggleFavorite: (DestinationViewModel.SavedDestination) -> Unit,
-    onLoadGpx: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -658,11 +659,6 @@ private fun BottomSection(
                 }
             }
 
-            // Load GPX button (preserves existing flow)
-            item {
-                Spacer(modifier = Modifier.height(4.dp))
-                LoadGpxItem(onClick = onLoadGpx)
-            }
         }
     }
 }
@@ -745,41 +741,3 @@ private fun SavedDestinationItem(
     }
 }
 
-@Composable
-private fun LoadGpxItem(onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(DarkSurfaceHighest)
-            .clickable { onClick() }
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .size(32.dp)
-                .background(
-                    color = CurveCallPrimaryDim.copy(alpha = 0.3f),
-                    shape = CircleShape
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = Icons.Default.NearMe,
-                contentDescription = null,
-                modifier = Modifier.size(16.dp),
-                tint = CurveCallPrimary.copy(alpha = 0.6f)
-            )
-        }
-
-        Spacer(modifier = Modifier.width(10.dp))
-
-        Text(
-            text = "Load GPX File",
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
-        )
-    }
-}

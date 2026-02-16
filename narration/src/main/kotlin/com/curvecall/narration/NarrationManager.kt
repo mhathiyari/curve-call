@@ -32,8 +32,8 @@ import kotlin.concurrent.withLock
  * - **TTS duration** is estimated from the narration text word count.
  * - **Reaction time** comes from the driver's [TimingProfile][com.curvecall.narration.types.TimingProfile].
  * - **Braking distance** uses the kinematic equation with mode-specific deceleration.
- * - A **minimum cooldown** (minGapSec) prevents cognitive overload from rapid prompts.
  * - An **urgent alert** fires when the driver is dangerously close to a braking point.
+ * - When TTS finishes, the next ready event fires **immediately** (no cooldown gap).
  *
  * This class does not directly call TTS; instead, it exposes events via a
  * [NarrationListener] callback that the TTS layer (or tests) can implement.
@@ -94,20 +94,9 @@ class NarrationManager(
     /** Whether a route has been loaded and the manager is active. */
     private var isActive: Boolean = false
 
-    /** Timestamp (ms) when the last narration finished playing. Used for cooldown. */
-    private var lastNarrationEndTimeMs: Long = 0L
-
-    /** Priority of the last delivered narration. Used for priority-aware cooldown. */
-    private var lastNarrationPriority: Int = 0
-
     /** Resolved timing profile config from the current NarrationConfig. */
     private var profileConfig: TimingProfileConfig =
         TimingProfileConfig.forProfile(config.timingProfile)
-
-    /**
-     * Overridable time source for testing. Returns current time in milliseconds.
-     */
-    internal var timeSource: () -> Long = { System.currentTimeMillis() }
 
     /**
      * Set the listener for narration events.
@@ -147,8 +136,6 @@ class NarrationManager(
             this.currentProgressMeters = 0.0
             this.isOffRoute = false
             this.isActive = true
-            this.lastNarrationEndTimeMs = 0L
-            this.lastNarrationPriority = 0
 
             queue.clear()
             generateAndEnqueueEvents()
@@ -165,9 +152,9 @@ class NarrationManager(
      * Flow:
      * 1. Get all events whose curve is still ahead of the driver.
      * 2. Evaluate each with [TimingCalculator.evaluate].
-     * 3. URGENT events fire immediately, bypassing cooldown.
+     * 3. URGENT events fire immediately.
      * 4. Higher-priority FIRE events interrupt lower-priority in-progress narration.
-     * 5. Normal FIRE events respect cooldown and wait if something is playing.
+     * 5. Normal FIRE events wait if something is playing, fire otherwise.
      *
      * @param routeProgressMeters Current distance along the route from start, in meters.
      * @param speedMs Current speed in meters per second.
@@ -179,97 +166,23 @@ class NarrationManager(
             this.currentSpeedMs = speedMs
             this.currentProgressMeters = routeProgressMeters
 
-            // Get all events whose curve is still ahead
-            val ahead = queue.eventsAhead(routeProgressMeters)
-            if (ahead.isEmpty()) return
-
-            // Evaluate each pending event
-            val readyEvents = mutableListOf<NarrationEvent>()
-            var urgentEvent: NarrationEvent? = null
-
-            for (event in ahead) {
-                val distanceToCurve = event.curveDistanceFromStart - routeProgressMeters
-                val ttsDuration = timingCalculator.estimateTtsDuration(event.text)
-
-                val decision = timingCalculator.evaluate(
-                    distanceToCurveEntry = distanceToCurve,
-                    currentSpeedMs = speedMs,
-                    advisorySpeedMs = event.advisorySpeedMs,
-                    ttsDurationSec = ttsDuration,
-                    profile = profileConfig,
-                    mode = config.mode
-                )
-
-                when (decision) {
-                    TriggerDecision.URGENT -> {
-                        // Take the highest-priority urgent event
-                        if (urgentEvent == null || event.priority > urgentEvent.priority) {
-                            urgentEvent = event
-                        }
-                    }
-                    TriggerDecision.FIRE -> readyEvents.add(event)
-                    TriggerDecision.WAIT -> { /* re-evaluate next tick */ }
-                }
-            }
-
-            // Urgent alerts bypass everything — fire immediately
-            if (urgentEvent != null) {
-                val urgentNarration = urgentEvent.copy(
-                    text = "Brake, ${urgentEvent.text}",
-                    priority = NarrationEvent.PRIORITY_URGENT
-                )
-                // Close out any currently-playing narration so the TTS layer
-                // can cleanly flush and speak the urgent alert without overlap.
-                queue.markCurrentDelivered()
-                queue.markDelivered(urgentEvent)
-                lastNarrationEndTimeMs = 0L // reset cooldown so follow-ups aren't blocked
-                lastNarrationPriority = NarrationEvent.PRIORITY_URGENT
-                listener?.onUrgentAlert(urgentNarration)
-                return
-            }
-
-            // Check for interrupts: if something is playing and a higher-priority ready event exists
-            val interrupt = queue.checkForInterrupt(readyEvents)
-            if (interrupt != null) {
-                lastNarrationEndTimeMs = 0L
-                lastNarrationPriority = interrupt.priority
-                listener?.onInterrupt(interrupt)
-                return
-            }
-
-            // Normal delivery: pick the highest-priority ready event, respecting cooldown
-            if (readyEvents.isEmpty()) return
-            if (queue.currentlyPlaying() != null) return // something is already playing
-
-            val best = readyEvents.maxByOrNull { it.priority } ?: return
-
-            // Priority-aware cooldown: high-severity curves use shorter cooldowns
-            // to prevent missing consecutive hairpins on mountain switchbacks.
-            val now = timeSource()
-            val effectiveGapMs = (effectiveCooldown(
-                lastPriority = lastNarrationPriority,
-                nextPriority = best.priority,
-                baseGapSec = profileConfig.minGapSec
-            ) * 1000).toLong()
-            if (lastNarrationEndTimeMs > 0 && (now - lastNarrationEndTimeMs) < effectiveGapMs) {
-                return // too soon since last narration
-            }
-            queue.markPlaying(best)
-            listener?.onNarration(best)
+            evaluateAndFireNext()
         }
     }
 
     /**
      * Notify the manager that the current narration has finished playing.
-     * This marks the event as delivered, records the end time for cooldown,
-     * and allows the next event to play.
+     * This marks the event as delivered and immediately evaluates whether
+     * the next event should fire (voice chaining with no cooldown gap).
      */
     fun onNarrationComplete() {
         lock.withLock {
-            val current = queue.currentlyPlaying()
-            lastNarrationEndTimeMs = timeSource()
-            lastNarrationPriority = current?.priority ?: 0
             queue.markCurrentDelivered()
+
+            // Immediately chain the next ready event using stored position/speed
+            if (isActive && !isPaused) {
+                evaluateAndFireNext()
+            }
         }
     }
 
@@ -305,8 +218,6 @@ class NarrationManager(
             routeSegments = emptyList()
             currentProgressMeters = 0.0
             currentSpeedMs = 0.0
-            lastNarrationEndTimeMs = 0L
-            lastNarrationPriority = 0
         }
     }
 
@@ -335,6 +246,91 @@ class NarrationManager(
         lock.withLock {
             return queue.pendingEvents()
         }
+    }
+
+    // ========================================================================
+    // Private: Evaluation + Firing
+    // ========================================================================
+
+    /**
+     * Evaluate all pending events against the current position/speed and fire
+     * the best ready event. Called from both [onLocationUpdate] (GPS tick) and
+     * [onNarrationComplete] (TTS finished — immediate chaining).
+     *
+     * Uses a past buffer to include events the driver recently passed while a
+     * previous narration was playing. Without this, tightly-spaced curves on
+     * switchbacks would be silently dropped.
+     *
+     * Must be called while holding [lock].
+     */
+    private fun evaluateAndFireNext() {
+        // Include events the driver passed while TTS was busy.
+        // Buffer = distance traveled during one max-length TTS utterance.
+        val pastBuffer = currentSpeedMs * MAX_TTS_LOOKBACK_SEC
+        val candidates = queue.eventsAhead(currentProgressMeters, pastBuffer)
+        if (candidates.isEmpty()) return
+
+        val readyEvents = mutableListOf<NarrationEvent>()
+        var urgentEvent: NarrationEvent? = null
+
+        for (event in candidates) {
+            val distanceToCurve = event.curveDistanceFromStart - currentProgressMeters
+
+            if (distanceToCurve < 0) {
+                // Driver already passed this curve's entry point while TTS was busy.
+                // Fire it immediately — the driver is likely still in or near the curve.
+                readyEvents.add(event)
+                continue
+            }
+
+            val ttsDuration = timingCalculator.estimateTtsDuration(event.text)
+
+            val decision = timingCalculator.evaluate(
+                distanceToCurveEntry = distanceToCurve,
+                currentSpeedMs = currentSpeedMs,
+                advisorySpeedMs = event.advisorySpeedMs,
+                ttsDurationSec = ttsDuration,
+                profile = profileConfig,
+                mode = config.mode
+            )
+
+            when (decision) {
+                TriggerDecision.URGENT -> {
+                    if (urgentEvent == null || event.priority > urgentEvent.priority) {
+                        urgentEvent = event
+                    }
+                }
+                TriggerDecision.FIRE -> readyEvents.add(event)
+                TriggerDecision.WAIT -> { /* re-evaluate next tick */ }
+            }
+        }
+
+        // Urgent alerts bypass everything — fire immediately
+        if (urgentEvent != null) {
+            val urgentNarration = urgentEvent.copy(
+                text = "Brake, ${urgentEvent.text}",
+                priority = NarrationEvent.PRIORITY_URGENT
+            )
+            queue.markCurrentDelivered()
+            queue.markDelivered(urgentEvent)
+            listener?.onUrgentAlert(urgentNarration)
+            return
+        }
+
+        // Check for interrupts: if something is playing and a higher-priority ready event exists
+        val interrupt = queue.checkForInterrupt(readyEvents)
+        if (interrupt != null) {
+            listener?.onInterrupt(interrupt)
+            return
+        }
+
+        // Normal delivery: pick the highest-priority ready event
+        if (readyEvents.isEmpty()) return
+        if (queue.currentlyPlaying() != null) return // something is already playing
+
+        val best = readyEvents.maxByOrNull { it.priority } ?: return
+        queue.markPlaying(best)
+        listener?.onNarration(best)
     }
 
     // ========================================================================
@@ -392,8 +388,7 @@ class NarrationManager(
 
     /**
      * Merge consecutive curve events that are close together into single combined
-     * narrations. This prevents the second curve from being missed due to cooldown
-     * when curves are tightly spaced.
+     * narrations. This prevents rapid-fire narrations when curves are tightly spaced.
      *
      * Example: "Hairpin right ahead, slow to 15" + "Sharp left ahead, slow to 25"
      * becomes: "Hairpin right ahead, slow to 15, then sharp left"
@@ -494,43 +489,25 @@ class NarrationManager(
         generateAndEnqueueEvents()
     }
 
-    /**
-     * Compute the effective cooldown between narrations based on priority transition.
-     *
-     * Sharp/hairpin events always use a minimal 0.5s cooldown to prevent missing
-     * consecutive tight curves on mountain switchbacks. Severity escalation
-     * (e.g., gentle → sharp) uses half the base cooldown. Same-or-lower severity
-     * transitions use the full base cooldown.
-     *
-     * @param lastPriority Priority of the narration that just finished.
-     * @param nextPriority Priority of the narration about to fire.
-     * @param baseGapSec Profile-configured minimum gap (e.g., 3.0s for NORMAL).
-     * @return Effective cooldown in seconds.
-     */
-    internal fun effectiveCooldown(lastPriority: Int, nextPriority: Int, baseGapSec: Double): Double {
-        // First narration ever — no cooldown
-        if (lastPriority == 0) return 0.0
-        // High-severity curves: minimal cooldown to avoid missing consecutive hairpins
-        if (nextPriority >= NarrationEvent.PRIORITY_SHARP) return MIN_COOLDOWN_SEC
-        // Severity escalation: reduced cooldown
-        if (nextPriority > lastPriority) return (baseGapSec * 0.5).coerceAtLeast(MIN_COOLDOWN_SEC)
-        // Same or lower severity: full cooldown
-        return baseGapSec
-    }
-
     companion object {
         /**
          * Maximum gap in meters between the end of one curve and the start of the
          * next for them to be merged into a single combined narration.
          *
-         * Reduced from 150m to 80m: the priority-aware cooldown (Sprint 1) now
-         * handles curves 80-150m apart dynamically at runtime. 80m still merges
-         * truly adjacent curves (e.g., 80m at 60 km/h = 4.8s), while avoiding
-         * over-merging at low speeds (80m at 40 km/h = 7.2s, reasonable).
+         * 80m merges truly adjacent curves (e.g., 80m at 60 km/h = 4.8s), while
+         * avoiding over-merging at low speeds (80m at 40 km/h = 7.2s, reasonable).
+         * Curves 80-200m apart are handled by immediate voice chaining — when curve A's
+         * TTS finishes, curve B fires instantly with no cooldown gap.
          */
         const val MERGE_GAP_THRESHOLD = 80.0
 
-        /** Minimum cooldown between narrations, even for high-severity curves. */
-        const val MIN_COOLDOWN_SEC = 0.5
+        /**
+         * Maximum TTS duration (seconds) used to compute the past lookback buffer.
+         * Events whose entry point the driver passed within `speed * MAX_TTS_LOOKBACK_SEC`
+         * meters are still eligible to fire. This prevents missing curves on switchbacks
+         * when the previous narration was still playing as the driver passed the next
+         * curve's entry point.
+         */
+        const val MAX_TTS_LOOKBACK_SEC = 5.0
     }
 }

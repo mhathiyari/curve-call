@@ -9,7 +9,6 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.curvecall.engine.types.DrivingMode
 import com.curvecall.engine.types.SpeedUnit
@@ -53,7 +52,6 @@ class UserPreferences @Inject constructor(
         val LEAN_ANGLE_NARRATION = booleanPreferencesKey("lean_angle_narration")
         val SURFACE_WARNINGS = booleanPreferencesKey("surface_warnings")
         val DISCLAIMER_ACCEPTED = booleanPreferencesKey("disclaimer_accepted")
-        val RECENT_ROUTES = stringSetPreferencesKey("recent_routes")
         val RECENT_DESTINATIONS = stringPreferencesKey("recent_destinations")
     }
 
@@ -213,37 +211,6 @@ class UserPreferences @Inject constructor(
      */
     fun setDisclaimerAcceptedBlocking(accepted: Boolean) {
         runBlocking { setDisclaimerAccepted(accepted) }
-    }
-
-    // -- Recent Routes --
-
-    val recentRoutes: Flow<Set<String>> = dataStore.data.map { prefs ->
-        prefs[Keys.RECENT_ROUTES] ?: emptySet()
-    }
-
-    /**
-     * Add a route URI to the recent routes list. Keeps at most 10 entries.
-     */
-    suspend fun addRecentRoute(routeUri: String) {
-        dataStore.edit { prefs ->
-            val current = prefs[Keys.RECENT_ROUTES]?.toMutableSet() ?: mutableSetOf()
-            current.add(routeUri)
-            // Limit to 10 most recent
-            if (current.size > 10) {
-                val trimmed = current.toList().takeLast(10).toSet()
-                prefs[Keys.RECENT_ROUTES] = trimmed
-            } else {
-                prefs[Keys.RECENT_ROUTES] = current
-            }
-        }
-    }
-
-    suspend fun removeRecentRoute(routeUri: String) {
-        dataStore.edit { prefs ->
-            val current = prefs[Keys.RECENT_ROUTES]?.toMutableSet() ?: mutableSetOf()
-            current.remove(routeUri)
-            prefs[Keys.RECENT_ROUTES] = current
-        }
     }
 
     // -- Recent Destinations (for Destination Picker) --

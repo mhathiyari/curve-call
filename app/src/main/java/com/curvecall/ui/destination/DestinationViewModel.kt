@@ -239,11 +239,12 @@ class DestinationViewModel @Inject constructor(
                 isRouteReady = false
             )
 
-            // Get current location (wait up to 10 seconds)
+            // Get current location: try cached first, then wait for fresh fix
             val location = try {
-                withTimeoutOrNull(10_000L) {
-                    locationProvider.locationUpdates().first()
-                }
+                locationProvider.getLastLocation()
+                    ?: withTimeoutOrNull(15_000L) {
+                        locationProvider.locationUpdates().first()
+                    }
             } catch (e: SecurityException) {
                 _uiState.value = _uiState.value.copy(
                     isRouting = false,

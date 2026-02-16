@@ -90,6 +90,10 @@ class GraphHopperRouter(private val context: Context) {
         val request = GHRequest(from.lat, from.lon, to.lat, to.lon)
             .setProfile(profile)
             .setLocale(Locale.US)
+            .setPathDetails(listOf("road_class", "surface", "max_speed"))
+
+        // Disable CH to allow path detail extraction (flexible routing ~1-3s vs CH <100ms)
+        request.putHint("ch.disable", true)
 
         val response = gh.route(request)
 
@@ -106,10 +110,14 @@ class GraphHopperRouter(private val context: Context) {
             points.add(LatLon(pointList.getLat(i), pointList.getLon(i)))
         }
 
+        // Extract road metadata from path details and instructions
+        val metadata = RouteMetadataExtractor.extract(path)
+
         return RouteResult(
             points = points,
             distanceMeters = path.distance,
             timeMillis = path.time,
+            metadata = metadata,
         )
     }
 

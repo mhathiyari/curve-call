@@ -46,9 +46,6 @@ fun CurveCallNavHost(
                 },
                 onNavigateToDestination = {
                     navController.navigate(NavRoutes.DESTINATION)
-                },
-                onNavigateToRoutePreview = {
-                    navController.navigate(NavRoutes.ROUTE_PREVIEW)
                 }
             )
         }
@@ -169,10 +166,6 @@ fun CurveCallNavHost(
                 },
                 onDestinationConfirmed = { _, _, _ ->
                     navController.navigate(NavRoutes.ROUTE_PREVIEW)
-                },
-                onLoadGpx = {
-                    // Navigate back to home where the GPX picker lives
-                    navController.popBackStack()
                 }
             )
         }

@@ -164,7 +164,7 @@ class RoutePipeline(
 
             val analysisResult = try {
                 withContext(Dispatchers.Default) {
-                    routeAnalyzer.analyzeRouteDetailed(routeResult.points, config)
+                    routeAnalyzer.analyzeRouteDetailed(routeResult.points, config, routeResult.metadata)
                 }
             } catch (e: IllegalArgumentException) {
                 _state.value = PipelineState.Error(

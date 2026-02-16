@@ -54,5 +54,19 @@ data class CurveSegment(
     val endPoint: LatLon,
 
     /** Distance from the route start to this curve's start, in meters. */
-    val distanceFromStart: Double
+    val distanceFromStart: Double,
+
+    // -- Road metadata (populated when routing via GraphHopper, null otherwise) --
+
+    /** Posted speed limit in km/h at this curve's location, or null if unknown. */
+    val speedLimitKmh: Double? = null,
+
+    /** Road classification (e.g., PRIMARY, RESIDENTIAL) at this curve, or null if unknown. */
+    val roadClass: RoadClass? = null,
+
+    /** Road surface type (e.g., ASPHALT, GRAVEL) at this curve, or null if unknown. */
+    val surface: Surface? = null,
+
+    /** True if this curve is at or near a road intersection (stop sign, traffic light). */
+    val isIntersection: Boolean = false
 )

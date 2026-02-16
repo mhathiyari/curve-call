@@ -46,14 +46,19 @@ class RouteAnalyzer {
     /**
      * Analyzes a route and returns classified segments.
      *
-     * @param points Ordered list of route coordinates (from GPX or routing engine).
+     * @param points Ordered list of route coordinates (from routing engine).
      *               Must contain at least 3 points.
      * @param config Analysis configuration with all thresholds and parameters.
+     * @param metadata Optional road metadata from the routing engine (e.g., GraphHopper).
      * @return Ordered list of [RouteSegment] covering the entire route.
      * @throws IllegalArgumentException if fewer than 3 points are provided.
      */
-    fun analyzeRoute(points: List<LatLon>, config: AnalysisConfig = AnalysisConfig()): List<RouteSegment> {
-        return analyzeRouteDetailed(points, config).segments
+    fun analyzeRoute(
+        points: List<LatLon>,
+        config: AnalysisConfig = AnalysisConfig(),
+        metadata: RouteMetadata? = null
+    ): List<RouteSegment> {
+        return analyzeRouteDetailed(points, config, metadata).segments
     }
 
     /**
@@ -61,9 +66,17 @@ class RouteAnalyzer {
      *
      * @param points Ordered list of route coordinates.
      * @param config Analysis configuration.
+     * @param metadata Optional road metadata from the routing engine. When present,
+     *                 data quality checks are skipped (OSM-sourced data is high quality)
+     *                 and curve segments are enriched with road class, surface, speed limit,
+     *                 and intersection data.
      * @return Full [AnalysisResult] including segments, interpolated points, and quality info.
      */
-    fun analyzeRouteDetailed(points: List<LatLon>, config: AnalysisConfig = AnalysisConfig()): AnalysisResult {
+    fun analyzeRouteDetailed(
+        points: List<LatLon>,
+        config: AnalysisConfig = AnalysisConfig(),
+        metadata: RouteMetadata? = null
+    ): AnalysisResult {
         require(points.size >= 3) {
             "Route must contain at least 3 points, but had ${points.size}"
         }
@@ -94,8 +107,8 @@ class RouteAnalyzer {
             val distFromStart = cumulativeDistances[raw.startIndex]
 
             if (raw.isCurve) {
-                // Classify
-                var curve = Classifier.classify(raw, curvaturePoints, interpolated, config, distFromStart)
+                // Classify (with optional road metadata enrichment)
+                var curve = Classifier.classify(raw, curvaturePoints, interpolated, config, distFromStart, metadata)
 
                 // Apply speed advisory
                 curve = SpeedAdvisor.applyAdvisory(curve, config)
@@ -121,8 +134,12 @@ class RouteAnalyzer {
         // Stage 7: Compound detection
         val withCompounds = CompoundDetector.detect(classifiedSegments, interpolated, config)
 
-        // Stage 8: Data quality check
-        val sparseRegions = DataQualityChecker.detectSparseRegions(points, config)
+        // Stage 8: Data quality check (skipped for routing-engine data — OSM is high quality)
+        val sparseRegions = if (metadata != null) {
+            emptyList()
+        } else {
+            DataQualityChecker.detectSparseRegions(points, config)
+        }
         val finalSegments = if (sparseRegions.isNotEmpty()) {
             applyDataQuality(withCompounds, sparseRegions)
         } else {

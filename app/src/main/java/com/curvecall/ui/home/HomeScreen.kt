@@ -1,15 +1,8 @@
 package com.curvecall.ui.home
 
-import android.content.Intent
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -25,32 +18,19 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.NearMe
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.TwoWheeler
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -63,80 +43,40 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.animation.core.Animatable
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.curvecall.engine.types.DrivingMode
-import com.curvecall.ui.map.RoutePreviewMap
 import com.curvecall.ui.theme.CurveCallPrimary
 import com.curvecall.ui.theme.CurveCallPrimaryDim
 import com.curvecall.ui.theme.CurveCallPrimaryVariant
 import com.curvecall.ui.theme.DarkBackground
-import com.curvecall.ui.theme.DarkSurfaceElevated
 import com.curvecall.ui.theme.SeverityModerate
-import kotlinx.coroutines.delay
 
 /**
  * Home screen — premium "instrument panel" aesthetic.
  *
  * Features a custom S-curve logo with headlight glow, radial gradient backdrop,
- * staggered entrance animations, glow-bordered mode toggle, and refined route cards.
+ * glow-bordered mode toggle, and a primary "Pick Destination" button.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     onNavigateToSettings: () -> Unit,
     onNavigateToDestination: () -> Unit = {},
-    onNavigateToRoutePreview: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val snackbarHostState = remember { SnackbarHostState() }
 
-    // SAF file picker launcher
-    val context = LocalContext.current
-    val filePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri: Uri? ->
-        uri?.let {
-            try {
-                context.contentResolver.takePersistableUriPermission(
-                    it, Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
-            } catch (_: SecurityException) { /* best-effort */ }
-            viewModel.loadGpxFile(it)
-        }
-    }
-
-    // Navigate to route preview when route is analyzed and ready
-    LaunchedEffect(uiState.isReadyForSession) {
-        if (uiState.isReadyForSession) {
-            onNavigateToRoutePreview()
-            viewModel.resetSessionState()
-        }
-    }
-
-    // Show errors via snackbar
-    LaunchedEffect(uiState.errorMessage) {
-        uiState.errorMessage?.let {
-            snackbarHostState.showSnackbar(it)
-            viewModel.clearError()
-        }
-    }
-
-    // Static layout — no entrance animation (keeps composition stable)
     val logoAlpha = remember { Animatable(1f) }
     val logoOffset = remember { Animatable(0f) }
     val contentAlpha = remember { Animatable(1f) }
     val contentOffset = remember { Animatable(0f) }
-    val bottomAlpha = remember { Animatable(1f) }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         containerColor = DarkBackground
     ) { paddingValues ->
         Box(
@@ -267,97 +207,6 @@ fun HomeScreen(
                     PickDestinationButton(
                         onClick = onNavigateToDestination
                     )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // -- Load GPX Button (secondary) --
-                    LoadRouteButton(
-                        isLoading = uiState.isLoading,
-                        loadingMessage = uiState.loadingMessage,
-                        onClick = {
-                            filePickerLauncher.launch(arrayOf(
-                                "application/gpx+xml",
-                                "application/xml",
-                                "text/xml",
-                                "*/*"
-                            ))
-                        }
-                    )
-
-                    // Loading track point count
-                    AnimatedVisibility(
-                        visible = uiState.isLoading && uiState.routePointCount > 0,
-                        enter = fadeIn(),
-                        exit = fadeOut()
-                    ) {
-                        Text(
-                            text = "${uiState.routePointCount} track points",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = CurveCallPrimary.copy(alpha = 0.5f),
-                            modifier = Modifier.padding(top = 8.dp)
-                        )
-                    }
-
-                    // Route preview map
-                    AnimatedVisibility(
-                        visible = uiState.routeSegments != null && uiState.interpolatedPoints != null,
-                        enter = fadeIn() + slideInVertically { it / 4 },
-                        exit = fadeOut()
-                    ) {
-                        RoutePreviewMap(
-                            routePoints = uiState.interpolatedPoints ?: emptyList(),
-                            routeSegments = uiState.routeSegments ?: emptyList(),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(220.dp)
-                                .padding(top = 16.dp)
-                                .clip(RoundedCornerShape(16.dp))
-                                .border(
-                                    width = 1.dp,
-                                    color = CurveCallPrimary.copy(alpha = 0.15f),
-                                    shape = RoundedCornerShape(16.dp)
-                                )
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(32.dp))
-
-                // ===== RECENT ROUTES =====
-                Column(modifier = Modifier.alpha(bottomAlpha.value)) {
-                    if (uiState.recentRoutes.isNotEmpty()) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "RECENT",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    letterSpacing = 2.sp
-                                ),
-                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        LazyColumn(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            itemsIndexed(uiState.recentRoutes) { _, routeUri ->
-                                RecentRouteItem(
-                                    routeUri = routeUri,
-                                    onClick = {
-                                        try {
-                                            viewModel.loadGpxFile(Uri.parse(routeUri))
-                                        } catch (_: Exception) { }
-                                    }
-                                )
-                            }
-                        }
-                    }
                 }
             }
         }
@@ -509,149 +358,6 @@ private fun PickDestinationButton(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = Color.White
-            )
-        }
-    }
-}
-
-/**
- * Secondary action — load a GPX file.
- */
-@Composable
-private fun LoadRouteButton(
-    isLoading: Boolean,
-    loadingMessage: String,
-    onClick: () -> Unit
-) {
-    val shape = RoundedCornerShape(14.dp)
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(56.dp)
-            .border(
-                width = 1.dp,
-                brush = Brush.linearGradient(
-                    colors = if (isLoading) listOf(
-                        CurveCallPrimary.copy(alpha = 0.2f),
-                        CurveCallPrimaryVariant.copy(alpha = 0.1f)
-                    ) else listOf(
-                        CurveCallPrimary.copy(alpha = 0.3f),
-                        CurveCallPrimaryVariant.copy(alpha = 0.15f),
-                        CurveCallPrimary.copy(alpha = 0.3f)
-                    )
-                ),
-                shape = shape
-            )
-            .clip(shape)
-            .clickable(enabled = !isLoading) { onClick() },
-        contentAlignment = Alignment.Center
-    ) {
-        if (isLoading) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(18.dp),
-                    color = CurveCallPrimary,
-                    strokeWidth = 2.dp
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Text(
-                    text = loadingMessage,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
-                )
-            }
-        } else {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.NearMe,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                    tint = CurveCallPrimary
-                )
-                Spacer(modifier = Modifier.width(10.dp))
-                Text(
-                    text = "Load GPX Route",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color.White
-                )
-            }
-        }
-    }
-}
-
-/**
- * Refined recent route card with subtle left accent and chevron.
- */
-@Composable
-private fun RecentRouteItem(
-    routeUri: String,
-    onClick: () -> Unit
-) {
-    val displayName = Uri.parse(routeUri).lastPathSegment
-        ?.replace(".gpx", "")
-        ?.replace("-", " ")
-        ?.replace("_", " ")
-        ?: "Route"
-
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() },
-        colors = CardDefaults.cardColors(
-            containerColor = DarkSurfaceElevated
-        ),
-        shape = RoundedCornerShape(12.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .drawBehind {
-                    // Left accent bar
-                    drawRect(
-                        color = CurveCallPrimary.copy(alpha = 0.5f),
-                        topLeft = Offset.Zero,
-                        size = androidx.compose.ui.geometry.Size(3.dp.toPx(), size.height)
-                    )
-                }
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Route icon with subtle glow circle
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .background(
-                        color = CurveCallPrimary.copy(alpha = 0.1f),
-                        shape = CircleShape
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.NearMe,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp),
-                    tint = CurveCallPrimary
-                )
-            }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Text(
-                text = displayName,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f),
-                modifier = Modifier.weight(1f)
-            )
-
-            Icon(
-                imageVector = Icons.Default.ChevronRight,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
-                tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.2f)
             )
         }
     }

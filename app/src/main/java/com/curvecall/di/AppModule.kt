@@ -3,9 +3,7 @@ package com.curvecall.di
 import android.content.Context
 import com.curvecall.audio.AndroidTtsEngine
 import com.curvecall.data.geocoding.GeocodingService
-import com.curvecall.data.gpx.GpxParser
 import com.curvecall.data.location.LocationProvider
-import com.curvecall.data.osm.OverpassClient
 import com.curvecall.data.preferences.UserPreferences
 import com.curvecall.data.regions.RegionRepository
 import com.curvecall.data.routing.GraphHopperRouter
@@ -36,7 +34,7 @@ import javax.inject.Singleton
  * Provides:
  * - Engine components (RouteAnalyzer)
  * - Narration components (TemplateEngine, TimingCalculator, NarrationManager, TtsEngine)
- * - Data layer (LocationProvider, UserPreferences, GpxParser, OverpassClient)
+ * - Data layer (LocationProvider, UserPreferences)
  * - Android services (FusedLocationProviderClient, OkHttpClient)
  *
  * Note: MapMatcher is NOT provided here because it requires route-specific data
@@ -83,20 +81,6 @@ object AppModule {
         fusedLocationProviderClient: FusedLocationProviderClient
     ): LocationProvider {
         return LocationProvider(fusedLocationProviderClient)
-    }
-
-    @Provides
-    @Singleton
-    fun provideGpxParser(): GpxParser {
-        return GpxParser()
-    }
-
-    @Provides
-    @Singleton
-    fun provideOverpassClient(
-        okHttpClient: OkHttpClient
-    ): OverpassClient {
-        return OverpassClient(okHttpClient)
     }
 
     @Provides

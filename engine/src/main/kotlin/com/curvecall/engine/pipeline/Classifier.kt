@@ -18,6 +18,7 @@ object Classifier {
      * @param points The interpolated route points.
      * @param config Analysis configuration.
      * @param distanceFromStart Distance from route start to this segment's start point.
+     * @param metadata Optional road metadata from routing engine for enriching classification.
      * @return A fully classified [CurveSegment].
      */
     fun classify(
@@ -25,7 +26,8 @@ object Classifier {
         curvaturePoints: List<CurvatureComputer.CurvaturePoint>,
         points: List<LatLon>,
         config: AnalysisConfig,
-        distanceFromStart: Double
+        distanceFromStart: Double,
+        metadata: RouteMetadata? = null
     ): CurveSegment {
         require(rawSegment.isCurve) { "Can only classify curve segments" }
 
@@ -70,7 +72,11 @@ object Classifier {
             endIndex = endIdx,
             startPoint = points[startIdx],
             endPoint = points[endIdx],
-            distanceFromStart = distanceFromStart
+            distanceFromStart = distanceFromStart,
+            speedLimitKmh = metadata?.maxSpeedAt(distanceFromStart),
+            roadClass = metadata?.roadClassAt(distanceFromStart),
+            surface = metadata?.surfaceAt(distanceFromStart),
+            isIntersection = metadata?.isNearIntersection(distanceFromStart) ?: false
         )
     }
 

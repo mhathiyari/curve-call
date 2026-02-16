@@ -96,12 +96,24 @@ object SpeedAdvisor {
     /**
      * Applies speed advisory to a classified curve segment.
      *
+     * When a speed limit is available from road metadata, the advisory is capped
+     * to `min(physicsSpeed, speedLimit)` — we never advise faster than the posted limit.
+     *
      * @param curve The classified curve (advisory fields may be null).
      * @param config The analysis configuration.
      * @return Updated curve with advisory speed set (or null if not needed).
      */
     fun applyAdvisory(curve: CurveSegment, config: AnalysisConfig): CurveSegment {
-        val speedMs = calculateSpeedMs(curve.minRadius, config.lateralG)
+        val physicsSpeedMs = calculateSpeedMs(curve.minRadius, config.lateralG)
+
+        // Cap physics advisory by posted speed limit (if available)
+        val speedMs = if (curve.speedLimitKmh != null) {
+            val limitMs = curve.speedLimitKmh / MS_TO_KMH
+            minOf(physicsSpeedMs, limitMs)
+        } else {
+            physicsSpeedMs
+        }
+
         return if (needsAdvisory(curve.severity, speedMs)) {
             curve.copy(advisorySpeedMs = speedMs)
         } else {

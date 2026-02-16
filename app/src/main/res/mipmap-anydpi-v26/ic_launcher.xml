@@ -11,45 +11,45 @@
             <!-- Left road edge -->
             <path
                 android:pathData="M46,22 C62,34 62,44 46,54 C30,64 30,74 46,86"
-                android:strokeColor="#00C853"
+                android:strokeColor="#F5A623"
                 android:strokeWidth="2.5"
                 android:fillColor="@android:color/transparent"
                 android:strokeLineCap="round" />
             <!-- Right road edge -->
             <path
                 android:pathData="M62,22 C78,34 78,44 62,54 C46,64 46,74 62,86"
-                android:strokeColor="#00C853"
+                android:strokeColor="#F5A623"
                 android:strokeWidth="2.5"
                 android:fillColor="@android:color/transparent"
                 android:strokeLineCap="round" />
             <!-- Center dashes -->
             <path
                 android:pathData="M54,26 L54,30"
-                android:strokeColor="#00C853"
+                android:strokeColor="#F5A623"
                 android:strokeWidth="1.5"
                 android:strokeAlpha="0.5"
                 android:strokeLineCap="round" />
             <path
                 android:pathData="M57,36 L58,40"
-                android:strokeColor="#00C853"
+                android:strokeColor="#F5A623"
                 android:strokeWidth="1.5"
                 android:strokeAlpha="0.5"
                 android:strokeLineCap="round" />
             <path
                 android:pathData="M54,48 L54,52"
-                android:strokeColor="#00C853"
+                android:strokeColor="#F5A623"
                 android:strokeWidth="1.5"
                 android:strokeAlpha="0.5"
                 android:strokeLineCap="round" />
             <path
                 android:pathData="M51,60 L50,64"
-                android:strokeColor="#00C853"
+                android:strokeColor="#F5A623"
                 android:strokeWidth="1.5"
                 android:strokeAlpha="0.5"
                 android:strokeLineCap="round" />
             <path
                 android:pathData="M54,72 L54,76"
-                android:strokeColor="#00C853"
+                android:strokeColor="#F5A623"
                 android:strokeWidth="1.5"
                 android:strokeAlpha="0.5"
                 android:strokeLineCap="round" />

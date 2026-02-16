@@ -18,7 +18,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.curvecall.ui.theme.CurveCallPrimary
+import com.curvecall.ui.theme.CurveCuePrimary
 
 /**
  * First-launch disclaimer dialog (PRD Section 14.1).
@@ -57,7 +57,7 @@ fun DisclaimerDialog(
                 onClick = onAccept,
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = CurveCallPrimary
+                    containerColor = CurveCuePrimary
                 )
             ) {
                 Text(

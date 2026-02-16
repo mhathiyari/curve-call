@@ -43,7 +43,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.curvecall.engine.types.Severity
 import com.curvecall.ui.map.RoutePreviewMap
-import com.curvecall.ui.theme.CurveCallPrimary
+import com.curvecall.ui.theme.CurveCuePrimary
 import com.curvecall.ui.theme.DarkBackground
 import com.curvecall.ui.theme.DarkSurfaceElevated
 import com.curvecall.ui.theme.severityColor
@@ -180,7 +180,7 @@ private fun BottomPanel(
                     .fillMaxWidth()
                     .height(52.dp),
                 shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = CurveCallPrimary)
+                colors = ButtonDefaults.buttonColors(containerColor = CurveCuePrimary)
             ) {
                 Icon(
                     imageVector = Icons.Default.PlayArrow,
@@ -211,7 +211,7 @@ private fun StatItem(
             imageVector = icon,
             contentDescription = null,
             modifier = Modifier.size(20.dp),
-            tint = CurveCallPrimary
+            tint = CurveCuePrimary
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(

@@ -18,7 +18,7 @@ class CurveCallApplication : Application() {
 
         // Configure osmdroid: user agent (required by OSM tile policy) and cache path
         val osmConfig = Configuration.getInstance()
-        osmConfig.userAgentValue = "CurveCall/1.0"
+        osmConfig.userAgentValue = "CurveCue/1.0"
         osmConfig.osmdroidTileCache = cacheDir.resolve("osmdroid")
         osmConfig.tileDownloadThreads = 2
     }

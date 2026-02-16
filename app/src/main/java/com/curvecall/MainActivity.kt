@@ -14,7 +14,7 @@ import androidx.navigation.compose.rememberNavController
 import com.curvecall.data.preferences.UserPreferences
 import com.curvecall.ui.disclaimer.DisclaimerDialog
 import com.curvecall.ui.navigation.CurveCallNavHost
-import com.curvecall.ui.theme.CurveCallTheme
+import com.curvecall.ui.theme.CurveCueTheme
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -35,7 +35,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         setContent {
-            CurveCallTheme(darkTheme = true) {
+            CurveCueTheme(darkTheme = true) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background

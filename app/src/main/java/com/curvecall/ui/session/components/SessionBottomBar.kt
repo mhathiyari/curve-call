@@ -61,7 +61,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.curvecall.engine.types.Direction
 import com.curvecall.ui.session.SessionViewModel
-import com.curvecall.ui.theme.CurveCallPrimary
+import com.curvecall.ui.theme.CurveCuePrimary
 import com.curvecall.ui.theme.DarkSurfaceElevated
 import com.curvecall.ui.theme.NarrationBannerText
 import com.curvecall.ui.theme.NarrationBannerWarning
@@ -98,7 +98,7 @@ fun SessionBottomBar(
         }
     }
 
-    val progressColor = CurveCallPrimary
+    val progressColor = CurveCuePrimary
     val progressFraction = uiState.routeProgressPercent / 100f
 
     Surface(
@@ -252,14 +252,14 @@ private fun PrimaryTier(
                 Box(
                     modifier = Modifier
                         .size(60.dp)
-                        .border(2.dp, CurveCallPrimary.copy(alpha = 0.3f), CircleShape)
+                        .border(2.dp, CurveCuePrimary.copy(alpha = 0.3f), CircleShape)
                 )
             }
             FilledIconButton(
                 onClick = onPlayPause,
                 modifier = Modifier.size(52.dp),
                 colors = IconButtonDefaults.filledIconButtonColors(
-                    containerColor = CurveCallPrimary
+                    containerColor = CurveCuePrimary
                 )
             ) {
                 Icon(

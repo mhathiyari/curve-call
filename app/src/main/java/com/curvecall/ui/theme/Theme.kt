@@ -19,13 +19,13 @@ import androidx.core.view.WindowCompat
 import com.curvecall.engine.types.Severity
 
 private val DarkColorScheme = darkColorScheme(
-    primary = CurveCallPrimary,
+    primary = CurveCuePrimary,
     onPrimary = Color.Black,
-    primaryContainer = CurveCallPrimaryDim,
-    onPrimaryContainer = CurveCallPrimaryVariant,
-    secondary = CurveCallSecondary,
+    primaryContainer = CurveCuePrimaryDim,
+    onPrimaryContainer = CurveCuePrimaryVariant,
+    secondary = CurveCueSecondary,
     onSecondary = Color.White,
-    secondaryContainer = CurveCallSecondaryVariant,
+    secondaryContainer = CurveCueSecondaryVariant,
     background = DarkBackground,
     onBackground = OnDarkSurface,
     surface = DarkSurface,
@@ -38,12 +38,12 @@ private val DarkColorScheme = darkColorScheme(
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = CurveCallPrimary,
+    primary = CurveCuePrimary,
     onPrimary = Color.Black,
-    primaryContainer = CurveCallPrimaryVariant,
-    secondary = CurveCallSecondary,
+    primaryContainer = CurveCuePrimaryVariant,
+    secondary = CurveCueSecondary,
     onSecondary = Color.White,
-    secondaryContainer = CurveCallSecondaryVariant,
+    secondaryContainer = CurveCueSecondaryVariant,
     background = LightBackground,
     onBackground = OnLightSurface,
     surface = LightSurface,
@@ -61,11 +61,11 @@ private val LightColorScheme = lightColorScheme(
 val SpeedFontFamily: FontFamily = FontFamily.Monospace
 
 /**
- * CurveCall custom typography.
+ * CurveCue custom typography.
  * Uses monospaced figures for numeric displays (speed, distance)
  * and clean sans-serif for all text content.
  */
-private val CurveCallTypography = Typography(
+private val CurveCueTypography = Typography(
     // Speed display: large monospaced
     displayLarge = TextStyle(
         fontFamily = FontFamily.Monospace,
@@ -115,14 +115,14 @@ private val CurveCallTypography = Typography(
 )
 
 /**
- * CurveCall Material 3 theme.
+ * CurveCue Material 3 theme.
  *
  * Uses a dark color scheme optimized for driving (less glare).
  * The severity color system from PRD Section 8.2 is available
  * via the [severityColor] helper function.
  */
 @Composable
-fun CurveCallTheme(
+fun CurveCueTheme(
     darkTheme: Boolean = true, // Always dark — driving app, less glare
     content: @Composable () -> Unit
 ) {
@@ -139,7 +139,7 @@ fun CurveCallTheme(
 
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = CurveCallTypography,
+        typography = CurveCueTypography,
         content = content
     )
 }

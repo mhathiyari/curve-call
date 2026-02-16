@@ -124,7 +124,7 @@ class SessionForegroundService : Service() {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("CurveCall")
+            .setContentTitle("CurveCue")
             .setContentText(contentText)
             .setSmallIcon(android.R.drawable.ic_menu_compass)
             .setOngoing(true)

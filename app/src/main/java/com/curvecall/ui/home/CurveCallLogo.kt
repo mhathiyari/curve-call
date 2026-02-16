@@ -24,8 +24,8 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.curvecall.ui.theme.CurveCallPrimary
-import com.curvecall.ui.theme.CurveCallPrimaryVariant
+import com.curvecall.ui.theme.CurveCuePrimary
+import com.curvecall.ui.theme.CurveCuePrimaryVariant
 
 /**
  * Custom CurveCall logo — a stylized S-curve road mark.
@@ -84,9 +84,9 @@ fun CurveCallLogo(
             path = centerPath,
             brush = Brush.verticalGradient(
                 colors = listOf(
-                    CurveCallPrimary.copy(alpha = currentGlow * 0.3f),
-                    CurveCallPrimary.copy(alpha = currentGlow),
-                    CurveCallPrimary.copy(alpha = currentGlow * 0.3f),
+                    CurveCuePrimary.copy(alpha = currentGlow * 0.3f),
+                    CurveCuePrimary.copy(alpha = currentGlow),
+                    CurveCuePrimary.copy(alpha = currentGlow * 0.3f),
                 )
             ),
             style = Stroke(
@@ -99,7 +99,7 @@ fun CurveCallLogo(
         // Secondary glow layer (tighter)
         drawPath(
             path = centerPath,
-            color = CurveCallPrimary.copy(alpha = currentGlow * 0.6f),
+            color = CurveCuePrimary.copy(alpha = currentGlow * 0.6f),
             style = Stroke(
                 width = roadWidth * 1.6f,
                 cap = StrokeCap.Round,
@@ -110,7 +110,7 @@ fun CurveCallLogo(
         // Road surface (dark fill between edges)
         drawPath(
             path = centerPath,
-            color = Color(0xFF0A1F0A),
+            color = Color(0xFF1A140A),
             style = Stroke(
                 width = roadWidth,
                 cap = StrokeCap.Round,
@@ -123,9 +123,9 @@ fun CurveCallLogo(
             path = createOffsetSCurvePath(w, h, -halfRoad),
             brush = Brush.verticalGradient(
                 colors = listOf(
-                    CurveCallPrimaryVariant.copy(alpha = 0.7f),
-                    CurveCallPrimary,
-                    CurveCallPrimaryVariant.copy(alpha = 0.7f),
+                    CurveCuePrimaryVariant.copy(alpha = 0.7f),
+                    CurveCuePrimary,
+                    CurveCuePrimaryVariant.copy(alpha = 0.7f),
                 )
             ),
             style = Stroke(
@@ -140,9 +140,9 @@ fun CurveCallLogo(
             path = createOffsetSCurvePath(w, h, halfRoad),
             brush = Brush.verticalGradient(
                 colors = listOf(
-                    CurveCallPrimaryVariant.copy(alpha = 0.7f),
-                    CurveCallPrimary,
-                    CurveCallPrimaryVariant.copy(alpha = 0.7f),
+                    CurveCuePrimaryVariant.copy(alpha = 0.7f),
+                    CurveCuePrimary,
+                    CurveCuePrimaryVariant.copy(alpha = 0.7f),
                 )
             ),
             style = Stroke(
@@ -153,7 +153,7 @@ fun CurveCallLogo(
         )
 
         // Center dashed line
-        drawCenterDashes(w, h, CurveCallPrimary.copy(alpha = 0.5f))
+        drawCenterDashes(w, h, CurveCuePrimary.copy(alpha = 0.5f))
     }
 }
 

@@ -62,7 +62,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.curvecall.engine.types.LatLon
 import com.curvecall.ui.map.SessionMap
 import com.curvecall.ui.session.components.SessionBottomBar
-import com.curvecall.ui.theme.CurveCallPrimary
+import com.curvecall.ui.theme.CurveCuePrimary
 import com.curvecall.ui.theme.SeverityGentle
 import com.curvecall.ui.theme.SeverityModerate
 import com.curvecall.ui.theme.SeveritySharp
@@ -337,7 +337,7 @@ private fun GpsSignalDot(accuracy: Float) {
     val color = when {
         accuracy <= 0f -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
         accuracy <= 5f -> SeverityGentle
-        accuracy <= 15f -> CurveCallPrimary
+        accuracy <= 15f -> CurveCuePrimary
         accuracy <= 30f -> SeverityModerate
         else -> SeveritySharp
     }

@@ -50,9 +50,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.animation.core.Animatable
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.curvecall.engine.types.DrivingMode
-import com.curvecall.ui.theme.CurveCallPrimary
-import com.curvecall.ui.theme.CurveCallPrimaryDim
-import com.curvecall.ui.theme.CurveCallPrimaryVariant
+import com.curvecall.ui.theme.CurveCuePrimary
+import com.curvecall.ui.theme.CurveCuePrimaryDim
+import com.curvecall.ui.theme.CurveCuePrimaryVariant
 import com.curvecall.ui.theme.DarkBackground
 import com.curvecall.ui.theme.SeverityModerate
 
@@ -93,8 +93,8 @@ fun HomeScreen(
                         drawCircle(
                             brush = Brush.radialGradient(
                                 colors = listOf(
-                                    CurveCallPrimary.copy(alpha = 0.08f),
-                                    CurveCallPrimaryDim.copy(alpha = 0.03f),
+                                    CurveCuePrimary.copy(alpha = 0.08f),
+                                    CurveCuePrimaryDim.copy(alpha = 0.03f),
                                     Color.Transparent
                                 ),
                                 center = Offset(size.width / 2f, size.height * 0.18f),
@@ -140,7 +140,7 @@ fun HomeScreen(
                         Spacer(modifier = Modifier.height(20.dp))
 
                         Text(
-                            text = "CurveCall",
+                            text = "CurveCue",
                             style = MaterialTheme.typography.headlineLarge.copy(
                                 fontSize = 32.sp,
                                 letterSpacing = 2.sp
@@ -157,7 +157,7 @@ fun HomeScreen(
                                 letterSpacing = 3.sp,
                                 fontSize = 11.sp
                             ),
-                            color = CurveCallPrimary.copy(alpha = 0.6f)
+                            color = CurveCuePrimary.copy(alpha = 0.6f)
                         )
                     }
                 }
@@ -181,7 +181,7 @@ fun HomeScreen(
 
                     // -- No offline data warning --
                     AnimatedVisibility(
-                        visible = !uiState.hasOfflineRegions,
+                        visible = false, // TODO: re-enable offline region warning
                         enter = fadeIn(),
                         exit = fadeOut()
                     ) {
@@ -225,7 +225,7 @@ private fun DrivingModeToggle(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .background(Color(0xFF131313))
+            .background(Color(0xFF171310))
             .clickable { onToggle() }
             .padding(4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -262,8 +262,8 @@ private fun ModeOption(
                             width = 1.dp,
                             brush = Brush.verticalGradient(
                                 colors = listOf(
-                                    CurveCallPrimary.copy(alpha = 0.6f),
-                                    CurveCallPrimary.copy(alpha = 0.2f)
+                                    CurveCuePrimary.copy(alpha = 0.6f),
+                                    CurveCuePrimary.copy(alpha = 0.2f)
                                 )
                             ),
                             shape = shape
@@ -271,8 +271,8 @@ private fun ModeOption(
                         .background(
                             brush = Brush.verticalGradient(
                                 colors = listOf(
-                                    CurveCallPrimary.copy(alpha = 0.15f),
-                                    CurveCallPrimary.copy(alpha = 0.05f)
+                                    CurveCuePrimary.copy(alpha = 0.15f),
+                                    CurveCuePrimary.copy(alpha = 0.05f)
                                 )
                             ),
                             shape = shape
@@ -294,7 +294,7 @@ private fun ModeOption(
                 imageVector = icon,
                 contentDescription = null,
                 modifier = Modifier.size(22.dp),
-                tint = if (isSelected) CurveCallPrimary
+                tint = if (isSelected) CurveCuePrimary
                 else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.35f)
             )
             Spacer(modifier = Modifier.width(8.dp))
@@ -325,9 +325,9 @@ private fun PickDestinationButton(
                 width = 1.5.dp,
                 brush = Brush.linearGradient(
                     colors = listOf(
-                        CurveCallPrimary.copy(alpha = 0.7f),
-                        CurveCallPrimaryVariant.copy(alpha = 0.4f),
-                        CurveCallPrimary.copy(alpha = 0.7f)
+                        CurveCuePrimary.copy(alpha = 0.7f),
+                        CurveCuePrimaryVariant.copy(alpha = 0.4f),
+                        CurveCuePrimary.copy(alpha = 0.7f)
                     )
                 ),
                 shape = shape
@@ -335,8 +335,8 @@ private fun PickDestinationButton(
             .background(
                 brush = Brush.verticalGradient(
                     colors = listOf(
-                        CurveCallPrimary.copy(alpha = 0.12f),
-                        CurveCallPrimary.copy(alpha = 0.03f)
+                        CurveCuePrimary.copy(alpha = 0.12f),
+                        CurveCuePrimary.copy(alpha = 0.03f)
                     )
                 ),
                 shape = shape
@@ -350,7 +350,7 @@ private fun PickDestinationButton(
                 imageVector = Icons.Default.NearMe,
                 contentDescription = null,
                 modifier = Modifier.size(20.dp),
-                tint = CurveCallPrimary
+                tint = CurveCuePrimary
             )
             Spacer(modifier = Modifier.width(10.dp))
             Text(

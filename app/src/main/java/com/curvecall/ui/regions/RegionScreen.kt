@@ -47,7 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.curvecall.data.regions.DownloadProgress
 import com.curvecall.data.regions.Region
-import com.curvecall.ui.theme.CurveCallPrimary
+import com.curvecall.ui.theme.CurveCuePrimary
 import com.curvecall.ui.theme.DarkSurfaceElevated
 import com.curvecall.ui.theme.SeveritySharp
 
@@ -100,7 +100,7 @@ fun RegionScreen(
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         CircularProgressIndicator(
-                            color = CurveCallPrimary,
+                            color = CurveCuePrimary,
                             modifier = Modifier.size(40.dp)
                         )
                         Spacer(modifier = Modifier.height(16.dp))
@@ -136,7 +136,7 @@ fun RegionScreen(
                                 viewModel.loadRegions()
                             },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = CurveCallPrimary
+                                containerColor = CurveCuePrimary
                             )
                         ) {
                             Text("Retry")
@@ -205,7 +205,7 @@ private fun StorageSummaryCard(storageUsedMb: Long) {
             Icon(
                 imageVector = Icons.Default.Storage,
                 contentDescription = null,
-                tint = CurveCallPrimary,
+                tint = CurveCuePrimary,
                 modifier = Modifier.size(24.dp)
             )
             Spacer(modifier = Modifier.width(12.dp))
@@ -282,7 +282,7 @@ private fun RegionCard(
                             Icon(
                                 imageVector = Icons.Default.CheckCircle,
                                 contentDescription = "Downloaded",
-                                tint = CurveCallPrimary,
+                                tint = CurveCuePrimary,
                                 modifier = Modifier.size(22.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
@@ -302,7 +302,7 @@ private fun RegionCard(
 
                     isThisRegionDownloading -> {
                         CircularProgressIndicator(
-                            color = CurveCallPrimary,
+                            color = CurveCuePrimary,
                             modifier = Modifier.size(24.dp),
                             strokeWidth = 2.5.dp
                         )
@@ -316,7 +316,7 @@ private fun RegionCard(
                             Icon(
                                 imageVector = Icons.Default.Download,
                                 contentDescription = "Download ${region.name}",
-                                tint = CurveCallPrimary,
+                                tint = CurveCuePrimary,
                                 modifier = Modifier.size(24.dp)
                             )
                         }
@@ -362,7 +362,7 @@ private fun DownloadProgressSection(progress: DownloadProgress) {
                             .fillMaxWidth()
                             .height(4.dp)
                             .clip(RoundedCornerShape(2.dp)),
-                        color = CurveCallPrimary,
+                        color = CurveCuePrimary,
                         trackColor = MaterialTheme.colorScheme.surfaceVariant
                     )
                     Spacer(modifier = Modifier.height(4.dp))
@@ -377,7 +377,7 @@ private fun DownloadProgressSection(progress: DownloadProgress) {
                             .fillMaxWidth()
                             .height(4.dp)
                             .clip(RoundedCornerShape(2.dp)),
-                        color = CurveCallPrimary,
+                        color = CurveCuePrimary,
                         trackColor = MaterialTheme.colorScheme.surfaceVariant
                     )
                 }
@@ -397,7 +397,7 @@ private fun DownloadProgressSection(progress: DownloadProgress) {
                         .fillMaxWidth()
                         .height(4.dp)
                         .clip(RoundedCornerShape(2.dp)),
-                    color = CurveCallPrimary,
+                    color = CurveCuePrimary,
                     trackColor = MaterialTheme.colorScheme.surfaceVariant
                 )
             }

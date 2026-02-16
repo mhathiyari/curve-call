@@ -24,7 +24,7 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.curvecall.ui.theme.CurveCallPrimary
+import com.curvecall.ui.theme.CurveCuePrimary
 import com.curvecall.ui.theme.SeveritySharp
 import kotlin.math.roundToInt
 
@@ -60,7 +60,7 @@ fun LeanAngleIndicator(
     val indicatorColor = when {
         isExtreme -> SeveritySharp
         isWarning -> SeveritySharp.copy(alpha = 0.8f)
-        else -> CurveCallPrimary
+        else -> CurveCuePrimary
     }
 
     Row(

@@ -1,5 +1,8 @@
 package com.curvecall.ui.destination
 
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import com.curvecall.data.geocoding.GeocodingService
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -69,7 +72,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.curvecall.ui.theme.CurveCallPrimary
+import com.curvecall.ui.theme.CurveCuePrimary
 import com.curvecall.ui.theme.DarkBackground
 import com.curvecall.ui.theme.DarkSurfaceElevated
 import com.curvecall.ui.theme.DarkSurfaceHighest
@@ -124,6 +127,20 @@ fun DestinationScreen(
     onDestinationConfirmed: (lat: Double, lon: Double, name: String) -> Unit,
     viewModel: DestinationViewModel = hiltViewModel()
 ) {
+    // Request location permission upfront — needed for "Route Here" GPS fix
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { /* result observed but not gating UI — SecurityException catch in VM handles denial */ }
+
+    LaunchedEffect(Unit) {
+        permissionLauncher.launch(
+            arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            )
+        )
+    }
+
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -180,19 +197,10 @@ fun DestinationScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // -- Search bar --
-            SearchBar(
-                query = uiState.searchQuery,
-                isSearching = uiState.isSearching,
-                onQueryChanged = viewModel::onSearchQueryChanged,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-            )
-
-            // -- Search results dropdown (overlays the map) --
+            // Map + search bar + overlays in a single Box so Compose
+            // elements draw on top of the native AndroidView (osmdroid).
             Box(modifier = Modifier.weight(1f)) {
-                // -- Map view --
+                // -- Map view (drawn first, behind everything) --
                 DestinationMapView(
                     selectedLat = uiState.selectedDestination?.latLon?.lat,
                     selectedLon = uiState.selectedDestination?.latLon?.lon,
@@ -200,11 +208,25 @@ fun DestinationScreen(
                     modifier = Modifier.fillMaxSize()
                 )
 
-                // -- Search results overlay --
+                // -- Search bar overlaid on top of map --
+                SearchBar(
+                    query = uiState.searchQuery,
+                    isSearching = uiState.isSearching,
+                    onQueryChanged = viewModel::onSearchQueryChanged,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .align(Alignment.TopStart)
+                )
+
+                // -- Search results overlay (below search bar) --
                 androidx.compose.animation.AnimatedVisibility(
                     visible = uiState.searchResults.isNotEmpty(),
                     enter = fadeIn() + slideInVertically(),
-                    exit = fadeOut() + slideOutVertically()
+                    exit = fadeOut() + slideOutVertically(),
+                    modifier = Modifier
+                        .padding(top = 72.dp)
+                        .align(Alignment.TopStart)
                 ) {
                     SearchResultsList(
                         results = uiState.searchResults,
@@ -274,7 +296,7 @@ private fun SearchBar(
             .height(56.dp)
             .border(
                 width = 1.5.dp,
-                color = CurveCallPrimary.copy(alpha = 0.5f),
+                color = CurveCuePrimary.copy(alpha = 0.5f),
                 shape = shape
             )
             .clip(shape),
@@ -288,14 +310,14 @@ private fun SearchBar(
             Icon(
                 imageVector = Icons.Default.Search,
                 contentDescription = null,
-                tint = CurveCallPrimary
+                tint = CurveCuePrimary
             )
         },
         trailingIcon = {
             if (isSearching) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(20.dp),
-                    color = CurveCallPrimary,
+                    color = CurveCuePrimary,
                     strokeWidth = 2.dp
                 )
             } else if (query.isNotEmpty()) {
@@ -310,11 +332,11 @@ private fun SearchBar(
         },
         singleLine = true,
         colors = TextFieldDefaults.colors(
-            focusedContainerColor = Color(0xFF333333),
-            unfocusedContainerColor = Color(0xFF2E2E2E),
+            focusedContainerColor = Color(0xFF332D27),
+            unfocusedContainerColor = Color(0xFF2E2822),
             focusedTextColor = Color.White,
             unfocusedTextColor = Color.White,
-            cursorColor = CurveCallPrimary,
+            cursorColor = CurveCuePrimary,
             focusedIndicatorColor = Color.Transparent,
             unfocusedIndicatorColor = Color.Transparent
         ),
@@ -354,7 +376,7 @@ private fun SearchResultsList(
                         imageVector = Icons.Default.LocationOn,
                         contentDescription = null,
                         modifier = Modifier.size(20.dp),
-                        tint = CurveCallPrimary.copy(alpha = 0.7f)
+                        tint = CurveCuePrimary.copy(alpha = 0.7f)
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
@@ -492,7 +514,7 @@ private fun RoutingProgressCard(message: String) {
         ) {
             CircularProgressIndicator(
                 modifier = Modifier.size(20.dp),
-                color = CurveCallPrimary,
+                color = CurveCuePrimary,
                 strokeWidth = 2.dp
             )
             Spacer(modifier = Modifier.width(12.dp))
@@ -531,7 +553,7 @@ private fun RouteHereButton(
                     imageVector = Icons.Default.LocationOn,
                     contentDescription = null,
                     modifier = Modifier.size(20.dp),
-                    tint = CurveCallPrimary
+                    tint = CurveCuePrimary
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
@@ -568,9 +590,9 @@ private fun RouteHereButton(
                         width = 1.5.dp,
                         brush = Brush.linearGradient(
                             colors = listOf(
-                                CurveCallPrimary.copy(alpha = 0.7f),
-                                CurveCallPrimary.copy(alpha = 0.3f),
-                                CurveCallPrimary.copy(alpha = 0.7f)
+                                CurveCuePrimary.copy(alpha = 0.7f),
+                                CurveCuePrimary.copy(alpha = 0.3f),
+                                CurveCuePrimary.copy(alpha = 0.7f)
                             )
                         ),
                         shape = shape
@@ -578,8 +600,8 @@ private fun RouteHereButton(
                     .background(
                         brush = Brush.verticalGradient(
                             colors = listOf(
-                                CurveCallPrimary.copy(alpha = 0.15f),
-                                CurveCallPrimary.copy(alpha = 0.05f)
+                                CurveCuePrimary.copy(alpha = 0.15f),
+                                CurveCuePrimary.copy(alpha = 0.05f)
                             )
                         ),
                         shape = shape
@@ -593,7 +615,7 @@ private fun RouteHereButton(
                         imageVector = Icons.Default.NearMe,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp),
-                        tint = CurveCallPrimary
+                        tint = CurveCuePrimary
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
@@ -695,7 +717,7 @@ private fun SavedDestinationItem(
             modifier = Modifier
                 .size(32.dp)
                 .background(
-                    color = CurveCallPrimary.copy(alpha = 0.1f),
+                    color = CurveCuePrimary.copy(alpha = 0.1f),
                     shape = CircleShape
                 ),
             contentAlignment = Alignment.Center
@@ -705,8 +727,8 @@ private fun SavedDestinationItem(
                 else Icons.Default.LocationOn,
                 contentDescription = null,
                 modifier = Modifier.size(16.dp),
-                tint = if (destination.isFavorite) CurveCallPrimary
-                else CurveCallPrimary.copy(alpha = 0.7f)
+                tint = if (destination.isFavorite) CurveCuePrimary
+                else CurveCuePrimary.copy(alpha = 0.7f)
             )
         }
 
@@ -734,7 +756,7 @@ private fun SavedDestinationItem(
                 else Icons.Default.FavoriteBorder,
                 contentDescription = if (destination.isFavorite) "Unfavorite" else "Favorite",
                 modifier = Modifier.size(16.dp),
-                tint = if (destination.isFavorite) CurveCallPrimary
+                tint = if (destination.isFavorite) CurveCuePrimary
                 else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.3f)
             )
         }

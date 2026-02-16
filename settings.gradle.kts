@@ -14,7 +14,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "CurveCall"
+rootProject.name = "CurveCue"
 
 include(":app")
 include(":engine")

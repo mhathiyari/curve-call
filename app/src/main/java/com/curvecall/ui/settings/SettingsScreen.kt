@@ -52,7 +52,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.curvecall.engine.types.DrivingMode
 import com.curvecall.engine.types.SpeedUnit
 import com.curvecall.narration.types.TimingProfile
-import com.curvecall.ui.theme.CurveCallPrimary
+import com.curvecall.ui.theme.CurveCuePrimary
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -327,7 +327,7 @@ fun SettingsScreen(
             Button(
                 onClick = onNavigateToRegions,
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = CurveCallPrimary)
+                colors = ButtonDefaults.buttonColors(containerColor = CurveCuePrimary)
             ) {
                 Text("Manage Offline Regions")
             }
@@ -345,7 +345,7 @@ private fun SectionHeader(title: String) {
         text = title,
         style = MaterialTheme.typography.titleMedium,
         fontWeight = FontWeight.Bold,
-        color = CurveCallPrimary,
+        color = CurveCuePrimary,
         modifier = Modifier.padding(top = 8.dp, bottom = 12.dp)
     )
 }
@@ -403,7 +403,7 @@ private fun SettingToggle(
             checked = checked,
             onCheckedChange = onCheckedChange,
             colors = SwitchDefaults.colors(
-                checkedTrackColor = CurveCallPrimary
+                checkedTrackColor = CurveCuePrimary
             )
         )
     }
@@ -428,8 +428,8 @@ private fun SliderWithValue(
             steps = steps,
             modifier = Modifier.weight(1f),
             colors = SliderDefaults.colors(
-                thumbColor = CurveCallPrimary,
-                activeTrackColor = CurveCallPrimary
+                thumbColor = CurveCuePrimary,
+                activeTrackColor = CurveCuePrimary
             )
         )
         Spacer(modifier = Modifier.width(12.dp))
@@ -502,7 +502,7 @@ private fun RowScope.ChoiceButton(
         Button(
             onClick = onClick,
             modifier = Modifier.weight(1f),
-            colors = ButtonDefaults.buttonColors(containerColor = CurveCallPrimary)
+            colors = ButtonDefaults.buttonColors(containerColor = CurveCuePrimary)
         ) {
             Text(label)
         }

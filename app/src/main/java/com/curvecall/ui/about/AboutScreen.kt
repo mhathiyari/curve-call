@@ -31,7 +31,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.curvecall.ui.disclaimer.DisclaimerText
-import com.curvecall.ui.theme.CurveCallPrimary
+import com.curvecall.ui.theme.CurveCuePrimary
 
 /**
  * About screen with app information and the full safety disclaimer.
@@ -83,11 +83,11 @@ fun AboutScreen(
                 imageVector = Icons.Default.Route,
                 contentDescription = null,
                 modifier = Modifier.size(56.dp),
-                tint = CurveCallPrimary
+                tint = CurveCuePrimary
             )
             Spacer(modifier = Modifier.height(12.dp))
             Text(
-                text = "CurveCall",
+                text = "CurveCue",
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground

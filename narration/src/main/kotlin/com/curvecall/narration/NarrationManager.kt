@@ -1,7 +1,9 @@
 package com.curvecall.narration
 
+import com.curvecall.engine.types.Direction
 import com.curvecall.engine.types.LatLon
 import com.curvecall.engine.types.RouteSegment
+import com.curvecall.engine.types.Severity
 import com.curvecall.narration.types.NarrationConfig
 import com.curvecall.narration.types.NarrationEvent
 import com.curvecall.narration.types.TimingProfileConfig
@@ -95,6 +97,9 @@ class NarrationManager(
     /** Timestamp (ms) when the last narration finished playing. Used for cooldown. */
     private var lastNarrationEndTimeMs: Long = 0L
 
+    /** Priority of the last delivered narration. Used for priority-aware cooldown. */
+    private var lastNarrationPriority: Int = 0
+
     /** Resolved timing profile config from the current NarrationConfig. */
     private var profileConfig: TimingProfileConfig =
         TimingProfileConfig.forProfile(config.timingProfile)
@@ -143,6 +148,7 @@ class NarrationManager(
             this.isOffRoute = false
             this.isActive = true
             this.lastNarrationEndTimeMs = 0L
+            this.lastNarrationPriority = 0
 
             queue.clear()
             generateAndEnqueueEvents()
@@ -212,8 +218,12 @@ class NarrationManager(
                     text = "Brake, ${urgentEvent.text}",
                     priority = NarrationEvent.PRIORITY_URGENT
                 )
+                // Close out any currently-playing narration so the TTS layer
+                // can cleanly flush and speak the urgent alert without overlap.
+                queue.markCurrentDelivered()
                 queue.markDelivered(urgentEvent)
                 lastNarrationEndTimeMs = 0L // reset cooldown so follow-ups aren't blocked
+                lastNarrationPriority = NarrationEvent.PRIORITY_URGENT
                 listener?.onUrgentAlert(urgentNarration)
                 return
             }
@@ -222,6 +232,7 @@ class NarrationManager(
             val interrupt = queue.checkForInterrupt(readyEvents)
             if (interrupt != null) {
                 lastNarrationEndTimeMs = 0L
+                lastNarrationPriority = interrupt.priority
                 listener?.onInterrupt(interrupt)
                 return
             }
@@ -230,14 +241,19 @@ class NarrationManager(
             if (readyEvents.isEmpty()) return
             if (queue.currentlyPlaying() != null) return // something is already playing
 
-            // Cooldown enforcement
+            val best = readyEvents.maxByOrNull { it.priority } ?: return
+
+            // Priority-aware cooldown: high-severity curves use shorter cooldowns
+            // to prevent missing consecutive hairpins on mountain switchbacks.
             val now = timeSource()
-            val minGapMs = (profileConfig.minGapSec * 1000).toLong()
-            if (lastNarrationEndTimeMs > 0 && (now - lastNarrationEndTimeMs) < minGapMs) {
+            val effectiveGapMs = (effectiveCooldown(
+                lastPriority = lastNarrationPriority,
+                nextPriority = best.priority,
+                baseGapSec = profileConfig.minGapSec
+            ) * 1000).toLong()
+            if (lastNarrationEndTimeMs > 0 && (now - lastNarrationEndTimeMs) < effectiveGapMs) {
                 return // too soon since last narration
             }
-
-            val best = readyEvents.maxByOrNull { it.priority } ?: return
             queue.markPlaying(best)
             listener?.onNarration(best)
         }
@@ -250,7 +266,9 @@ class NarrationManager(
      */
     fun onNarrationComplete() {
         lock.withLock {
+            val current = queue.currentlyPlaying()
             lastNarrationEndTimeMs = timeSource()
+            lastNarrationPriority = current?.priority ?: 0
             queue.markCurrentDelivered()
         }
     }
@@ -288,6 +306,7 @@ class NarrationManager(
             currentProgressMeters = 0.0
             currentSpeedMs = 0.0
             lastNarrationEndTimeMs = 0L
+            lastNarrationPriority = 0
         }
     }
 
@@ -365,7 +384,106 @@ class NarrationManager(
             }
         }
 
+        // Merge consecutive close curve events into combined narrations
+        mergeCloseEvents(events)
+
         queue.enqueueAll(events)
+    }
+
+    /**
+     * Merge consecutive curve events that are close together into single combined
+     * narrations. This prevents the second curve from being missed due to cooldown
+     * when curves are tightly spaced.
+     *
+     * Example: "Hairpin right ahead, slow to 15" + "Sharp left ahead, slow to 25"
+     * becomes: "Hairpin right ahead, slow to 15, then sharp left"
+     *
+     * Rules:
+     * - Only merges standalone curve events (not compound-annotated or straights)
+     * - Gap measured from end of one curve to start of the next
+     * - Groups are built greedily: A+B+C if all within threshold
+     * - Merged event uses the first curve's position, the max priority, and
+     *   the most conservative (lowest) advisory speed
+     */
+    private fun mergeCloseEvents(events: MutableList<NarrationEvent>) {
+        if (events.size < 2) return
+
+        val merged = mutableListOf<NarrationEvent>()
+        var i = 0
+
+        while (i < events.size) {
+            val current = events[i]
+
+            // Only merge standalone curve events (skip straights and compounds)
+            if (current.associatedCurve == null || current.associatedCurve.compoundType != null) {
+                merged.add(current)
+                i++
+                continue
+            }
+
+            // Greedily collect consecutive close curve events
+            val group = mutableListOf(current)
+            var j = i + 1
+
+            while (j < events.size) {
+                val next = events[j]
+
+                // Stop if next is not a standalone curve
+                if (next.associatedCurve == null || next.associatedCurve.compoundType != null) break
+
+                // Compute gap: end of last curve in group → start of next curve
+                val prevCurve = group.last().associatedCurve!!
+                val gap = next.curveDistanceFromStart -
+                    (group.last().curveDistanceFromStart + prevCurve.arcLength)
+
+                if (gap > MERGE_GAP_THRESHOLD) break
+
+                group.add(next)
+                j++
+            }
+
+            if (group.size == 1) {
+                merged.add(current)
+            } else {
+                merged.add(createMergedEvent(group))
+            }
+            i = j
+        }
+
+        events.clear()
+        events.addAll(merged)
+    }
+
+    /**
+     * Create a single merged narration event from a group of close curve events.
+     *
+     * The first curve keeps its full narration text. Subsequent curves are
+     * appended as brief descriptions: ", then [severity] [direction]".
+     */
+    private fun createMergedEvent(group: List<NarrationEvent>): NarrationEvent {
+        val first = group.first()
+        val parts = mutableListOf(first.text)
+
+        for (k in 1 until group.size) {
+            val curve = group[k].associatedCurve!!
+            val dir = if (curve.direction == Direction.LEFT) "left" else "right"
+            val brief = when (curve.severity) {
+                Severity.HAIRPIN -> "hairpin $dir"
+                Severity.SHARP -> "sharp $dir"
+                Severity.FIRM -> "firm $dir"
+                Severity.MODERATE -> "moderate $dir"
+                Severity.GENTLE -> "gentle $dir"
+            }
+            parts.add("then $brief")
+        }
+
+        return NarrationEvent(
+            text = parts.joinToString(", "),
+            priority = group.maxOf { it.priority },
+            curveDistanceFromStart = first.curveDistanceFromStart,
+            advisorySpeedMs = group.mapNotNull { it.advisorySpeedMs }.minOrNull(),
+            associatedCurve = first.associatedCurve
+        )
     }
 
     /**
@@ -374,5 +492,45 @@ class NarrationManager(
     private fun regenerateEvents() {
         queue.clearPending()
         generateAndEnqueueEvents()
+    }
+
+    /**
+     * Compute the effective cooldown between narrations based on priority transition.
+     *
+     * Sharp/hairpin events always use a minimal 0.5s cooldown to prevent missing
+     * consecutive tight curves on mountain switchbacks. Severity escalation
+     * (e.g., gentle → sharp) uses half the base cooldown. Same-or-lower severity
+     * transitions use the full base cooldown.
+     *
+     * @param lastPriority Priority of the narration that just finished.
+     * @param nextPriority Priority of the narration about to fire.
+     * @param baseGapSec Profile-configured minimum gap (e.g., 3.0s for NORMAL).
+     * @return Effective cooldown in seconds.
+     */
+    internal fun effectiveCooldown(lastPriority: Int, nextPriority: Int, baseGapSec: Double): Double {
+        // First narration ever — no cooldown
+        if (lastPriority == 0) return 0.0
+        // High-severity curves: minimal cooldown to avoid missing consecutive hairpins
+        if (nextPriority >= NarrationEvent.PRIORITY_SHARP) return MIN_COOLDOWN_SEC
+        // Severity escalation: reduced cooldown
+        if (nextPriority > lastPriority) return (baseGapSec * 0.5).coerceAtLeast(MIN_COOLDOWN_SEC)
+        // Same or lower severity: full cooldown
+        return baseGapSec
+    }
+
+    companion object {
+        /**
+         * Maximum gap in meters between the end of one curve and the start of the
+         * next for them to be merged into a single combined narration.
+         *
+         * Reduced from 150m to 80m: the priority-aware cooldown (Sprint 1) now
+         * handles curves 80-150m apart dynamically at runtime. 80m still merges
+         * truly adjacent curves (e.g., 80m at 60 km/h = 4.8s), while avoiding
+         * over-merging at low speeds (80m at 40 km/h = 7.2s, reasonable).
+         */
+        const val MERGE_GAP_THRESHOLD = 80.0
+
+        /** Minimum cooldown between narrations, even for high-severity curves. */
+        const val MIN_COOLDOWN_SEC = 0.5
     }
 }

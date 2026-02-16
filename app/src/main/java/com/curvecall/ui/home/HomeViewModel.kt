@@ -8,6 +8,7 @@ import com.curvecall.data.gpx.GpxParser
 import com.curvecall.data.gpx.GpxParseException
 import com.curvecall.data.osm.OverpassClient
 import com.curvecall.data.preferences.UserPreferences
+import com.curvecall.data.regions.RegionRepository
 import com.curvecall.data.session.SessionDataHolder
 import com.curvecall.data.tiles.TileDownloadState
 import com.curvecall.data.tiles.TileDownloader
@@ -41,7 +42,8 @@ class HomeViewModel @Inject constructor(
     private val overpassClient: OverpassClient,
     private val userPreferences: UserPreferences,
     private val sessionDataHolder: SessionDataHolder,
-    private val tileDownloader: TileDownloader
+    private val tileDownloader: TileDownloader,
+    private val regionRepository: RegionRepository
 ) : ViewModel() {
 
     /**
@@ -59,7 +61,8 @@ class HomeViewModel @Inject constructor(
         val isReadyForSession: Boolean = false,
         val recentRoutes: List<String> = emptyList(),
         val drivingMode: DrivingMode = DrivingMode.CAR,
-        val tileDownloadState: TileDownloadState = TileDownloadState.Idle
+        val tileDownloadState: TileDownloadState = TileDownloadState.Idle,
+        val hasOfflineRegions: Boolean = false
     )
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -82,6 +85,11 @@ class HomeViewModel @Inject constructor(
             tileDownloader.state.collect { state ->
                 _uiState.value = _uiState.value.copy(tileDownloadState = state)
             }
+        }
+        // Check for downloaded regions
+        viewModelScope.launch(Dispatchers.IO) {
+            val hasRegions = regionRepository.getDownloadedRegions().isNotEmpty()
+            _uiState.value = _uiState.value.copy(hasOfflineRegions = hasRegions)
         }
     }
 

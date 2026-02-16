@@ -52,6 +52,10 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "/META-INF/NOTICE*"
+            excludes += "/META-INF/LICENSE*"
+            excludes += "/META-INF/DEPENDENCIES"
+            excludes += "/META-INF/versions/**"
         }
     }
 }
@@ -97,6 +101,21 @@ dependencies {
 
     // osmdroid — OpenStreetMap map view with offline tile caching
     implementation("org.osmdroid:osmdroid-android:6.1.18")
+
+    // GraphHopper — on-device routing engine (pre-built graph loading only)
+    implementation("com.graphhopper:graphhopper-core:11.0") {
+        // java.awt.* does not exist on Android (only needed for elevation TIFF import)
+        exclude(group = "org.apache.xmlgraphics", module = "xmlgraphics-commons")
+        // Only needed for OSM PBF import; also avoids protobuf-java vs protobuf-lite conflict
+        exclude(group = "org.openstreetmap.osmosis")
+        // Not needed for routing, pulls javax.xml.stream (Stax)
+        exclude(group = "com.fasterxml.jackson.dataformat", module = "jackson-dataformat-xml")
+        // Let Gradle resolve to the project's Kotlin version
+        exclude(group = "org.jetbrains.kotlin")
+    }
+    // SLF4J Android binding (GraphHopper uses SLF4J 2.x for logging)
+    implementation("org.slf4j:slf4j-api:2.0.17")
+    implementation("com.github.tony19:logback-android:3.0.0")
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")

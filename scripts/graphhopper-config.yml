@@ -1,0 +1,39 @@
+# GraphHopper 11.0 configuration for CurveCall graph building.
+#
+# This config is used by build-graph.sh to produce routing graph directories
+# from OSM PBF extracts. The profiles defined here MUST match those in the
+# Android app's GraphHopperRouter class:
+#   - "car"        with custom model from car.json (built into GH JAR)
+#   - "motorcycle"  with custom model from motorcycle.json (built into GH JAR)
+#   - CH (Contraction Hierarchies) enabled for both
+#
+# GraphHopper version: 11.0
+# Docs: https://github.com/graphhopper/graphhopper/blob/master/docs/core/profiles.md
+
+graphhopper:
+
+  # OSM data file — overridden by build-graph.sh via -Ddw.graphhopper.datareader.file=
+  datareader.file: ""
+
+  # Output graph directory — overridden by build-graph.sh via -Ddw.graphhopper.graph.location=
+  graph.location: ""
+
+  # Two routing profiles matching the Android app
+  profiles:
+    - name: car
+      custom_model_files: car.json
+    - name: motorcycle
+      custom_model_files: motorcycle.json
+
+  # Contraction Hierarchies for fast on-device queries
+  profiles_ch:
+    - profile: car
+    - profile: motorcycle
+
+  # Import settings
+  import.osm.ignored_highways: footway,cycleway,path,pedestrian,steps,track
+  graph.dataaccess: RAM_STORE
+  graph.encoded_values: road_class,road_class_link,road_environment,max_speed,road_access,surface,smoothness,toll,track_type,hike_rating,mtb_rating,country
+
+  # Use all available threads during import
+  prepare.ch.threads: 0

@@ -38,6 +38,16 @@ class SessionDataHolder @Inject constructor() {
     var routeName: String? = null
         private set
 
+    /** Total route distance in meters (from routing engine or analysis). */
+    @Volatile
+    var distanceMeters: Double? = null
+        private set
+
+    /** Estimated travel time in milliseconds (from routing engine). */
+    @Volatile
+    var timeMillis: Long? = null
+        private set
+
     /**
      * Store analysis results for the session to consume.
      * Thread-safe: @Volatile ensures visibility across threads
@@ -48,12 +58,16 @@ class SessionDataHolder @Inject constructor() {
         segments: List<RouteSegment>,
         points: List<LatLon>,
         interpolated: List<LatLon>,
-        name: String?
+        name: String?,
+        distance: Double? = null,
+        time: Long? = null
     ) {
         routeSegments = segments
         routePoints = points
         interpolatedPoints = interpolated
         routeName = name
+        distanceMeters = distance
+        timeMillis = time
     }
 
     /**
@@ -65,6 +79,8 @@ class SessionDataHolder @Inject constructor() {
         routePoints = null
         interpolatedPoints = null
         routeName = null
+        distanceMeters = null
+        timeMillis = null
     }
 
     /**

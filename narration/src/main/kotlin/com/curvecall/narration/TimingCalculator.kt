@@ -24,7 +24,9 @@ import kotlin.math.max
  *
  * This class is pure Kotlin with no Android dependencies.
  */
-class TimingCalculator {
+class TimingCalculator(
+    private val calibrator: TtsDurationCalibrator? = null
+) {
 
     /**
      * Evaluate whether a narration event should fire on this GPS tick.
@@ -89,7 +91,12 @@ class TimingCalculator {
      */
     fun estimateTtsDuration(text: String): Double {
         val wordCount = text.split("\\s+".toRegex()).filter { it.isNotBlank() }.size
-        return wordCount / WORDS_PER_SECOND + TTS_STARTUP_DELAY_SEC
+        // Use calibrated estimate if available, otherwise fall back to defaults
+        return if (calibrator != null && calibrator.isCalibrated()) {
+            calibrator.estimateDuration(wordCount)
+        } else {
+            wordCount / WORDS_PER_SECOND + TTS_STARTUP_DELAY_SEC
+        }
     }
 
     /**

@@ -5,11 +5,11 @@ package com.curvecall.engine.types
  * All thresholds and parameters are documented with their PRD-specified defaults.
  */
 data class AnalysisConfig(
-    /** Target spacing between interpolated points in meters. Default 10.0m. */
-    val interpolationSpacing: Double = 10.0,
+    /** Target spacing between interpolated points in meters. Default 5.0m. */
+    val interpolationSpacing: Double = 5.0,
 
-    /** Number of points for the rolling average smoothing window. Default 7. */
-    val smoothingWindow: Int = 7,
+    /** Number of points for the rolling average smoothing window. Default 5. */
+    val smoothingWindow: Int = 5,
 
     /** Radius below which a point is considered "in a curve" (meters). Default 500.0m. */
     val curvatureThresholdRadius: Double = 500.0,

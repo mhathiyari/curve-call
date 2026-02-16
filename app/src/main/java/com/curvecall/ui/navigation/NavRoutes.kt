@@ -8,4 +8,7 @@ object NavRoutes {
     const val SESSION = "session"
     const val SETTINGS = "settings"
     const val ABOUT = "about"
+    const val REGIONS = "regions"
+    const val DESTINATION = "destination"
+    const val ROUTE_PREVIEW = "route_preview"
 }

@@ -98,6 +98,11 @@ object Classifier {
 
     /**
      * Finds the minimum smoothed radius within the segment.
+     *
+     * Uses the smoothed radius to avoid noise spikes in raw data that would
+     * falsely classify gentle curves as hairpins. The smoothing window (5 pts
+     * at 5m spacing = 25m) is tight enough to preserve genuine hairpin signals
+     * while filtering single-point noise.
      */
     private fun computeMinRadius(
         curvaturePoints: List<CurvatureComputer.CurvaturePoint>,

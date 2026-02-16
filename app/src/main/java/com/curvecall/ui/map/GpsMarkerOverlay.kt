@@ -2,7 +2,6 @@ package com.curvecall.ui.map
 
 import android.graphics.Canvas
 import android.graphics.Paint
-import android.graphics.Path
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Overlay
@@ -10,7 +9,7 @@ import org.osmdroid.views.overlay.Overlay
 /**
  * Custom osmdroid Overlay that draws a GPS position marker:
  * - Semi-transparent accuracy circle (radius from GPS accuracy)
- * - Bright directional arrow/chevron rotated by bearing with drop shadow
+ * - Bright filled dot at the current position with white border and drop shadow
  *
  * Update [position], [bearing], and [accuracy] on each GPS tick.
  */
@@ -19,13 +18,13 @@ class GpsMarkerOverlay : Overlay() {
     /** Current GPS position. Null = not drawn. */
     var position: GeoPoint? = null
 
-    /** Current bearing in degrees (0 = north, clockwise). */
+    /** Current bearing in degrees (kept for API compat but unused by dot). */
     var bearing: Float = 0f
 
     /** GPS accuracy in meters. */
     var accuracy: Float = 0f
 
-    private val arrowSizeDp = 28f
+    private val dotRadiusDp = 8f
 
     private val accuracyFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
@@ -38,13 +37,13 @@ class GpsMarkerOverlay : Overlay() {
         strokeWidth = 2f
     }
 
-    private val arrowFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    private val dotFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
         color = MapColors.GPS_ARROW
-        setShadowLayer(8f, 0f, 2f, 0x80000000.toInt())
+        setShadowLayer(6f, 0f, 2f, 0x80000000.toInt())
     }
 
-    private val arrowStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    private val dotStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         color = MapColors.GPS_ARROW_STROKE
         strokeWidth = 3f
@@ -69,32 +68,18 @@ class GpsMarkerOverlay : Overlay() {
             }
         }
 
-        // Draw directional arrow
+        // Draw position dot
         val density = mapView.context.resources.displayMetrics.density
-        val arrowSize = arrowSizeDp * density / 2f
+        val radiusPx = dotRadiusDp * density
 
         canvas.save()
-        // Enable layer for shadow to render correctly
         canvas.saveLayerAlpha(
-            x - arrowSize * 2, y - arrowSize * 2,
-            x + arrowSize * 2, y + arrowSize * 2,
+            x - radiusPx * 2, y - radiusPx * 2,
+            x + radiusPx * 2, y + radiusPx * 2,
             255
         )
-        canvas.translate(x, y)
-        // Compensate for map rotation (heading-up mode)
-        canvas.rotate(bearing + mapView.mapOrientation)
-
-        val arrowPath = Path().apply {
-            // Arrow pointing up (north = bearing 0)
-            moveTo(0f, -arrowSize)           // tip
-            lineTo(-arrowSize * 0.6f, arrowSize * 0.5f)  // bottom-left
-            lineTo(0f, arrowSize * 0.2f)     // notch
-            lineTo(arrowSize * 0.6f, arrowSize * 0.5f)   // bottom-right
-            close()
-        }
-
-        canvas.drawPath(arrowPath, arrowFillPaint)
-        canvas.drawPath(arrowPath, arrowStrokePaint)
+        canvas.drawCircle(x, y, radiusPx, dotFillPaint)
+        canvas.drawCircle(x, y, radiusPx, dotStrokePaint)
         canvas.restore()
         canvas.restore()
     }

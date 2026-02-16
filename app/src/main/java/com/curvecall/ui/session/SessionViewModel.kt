@@ -143,6 +143,9 @@ class SessionViewModel @Inject constructor(
     private var smoothedBearing: Float = 0f
     private val bearingSmoothingFactor = 0.15f
 
+    /** Previous location for computing bearing/speed when GPS doesn't provide them (e.g. emulator). */
+    private var previousLocation: Location? = null
+
     init {
         // Load route data from the shared session data holder (set by HomeViewModel)
         val segments = sessionDataHolder.routeSegments
@@ -214,6 +217,8 @@ class SessionViewModel @Inject constructor(
     fun startSession() {
         if (routePoints.isEmpty()) return
 
+        smoothedBearing = 0f
+        previousLocation = null
         _uiState.value = _uiState.value.copy(sessionState = SessionState.PLAYING)
 
         // Start foreground service for background GPS + TTS
@@ -368,13 +373,32 @@ class SessionViewModel @Inject constructor(
         val matcher = mapMatcher ?: return
         val gpsLatLon = LatLon(location.latitude, location.longitude)
 
-        // Speed from GPS (m/s -> km/h and mph)
-        val speedMs = location.speed.toDouble()
+        // Speed: prefer GPS speed, fall back to computing from consecutive positions
+        // (emulator GPX playback may not provide speed)
+        val speedMs = if (location.hasSpeed() && location.speed > 0f) {
+            location.speed.toDouble()
+        } else {
+            val prev = previousLocation
+            if (prev != null && location.time > prev.time) {
+                val dist = prev.distanceTo(location).toDouble()
+                val dt = (location.time - prev.time) / 1000.0
+                if (dt > 0) dist / dt else 0.0
+            } else 0.0
+        }
         val speedKmh = speedMs * 3.6
         val speedMph = speedMs * 2.23694
 
-        // Bearing: smooth with low-pass filter to prevent jitter at low speeds
-        val rawBearing = if (location.hasBearing()) location.bearing else smoothedBearing
+        // Bearing: prefer GPS bearing, fall back to computing from consecutive positions
+        // (emulator GPX playback doesn't provide bearing)
+        val rawBearing = if (location.hasBearing() && location.bearing != 0f) {
+            location.bearing
+        } else {
+            val prev = previousLocation
+            if (prev != null) {
+                val dist = prev.distanceTo(location).toDouble()
+                if (dist > 2.0) prev.bearingTo(location) else smoothedBearing
+            } else smoothedBearing
+        }
         smoothedBearing = if (speedMs > 1.0) {
             // Apply low-pass filter for smooth heading-up rotation
             val delta = normalizeAngleDelta(rawBearing - smoothedBearing)
@@ -383,6 +407,7 @@ class SessionViewModel @Inject constructor(
             // At very low speed, don't update bearing (GPS bearing is unreliable)
             smoothedBearing
         }
+        previousLocation = location
 
         // Map match to route (single argument - route data is in the MapMatcher instance)
         val matchResult = matcher.matchToRoute(gpsLatLon)

@@ -206,9 +206,10 @@ class CompoundDetectorTest {
 
         @Test
         fun `four linked curves form a series`() {
+            // Use same-direction curves so S-bend detection doesn't pair them
             val curves = (0..3).map { i ->
                 TestHelpers.createTestCurve(
-                    direction = if (i % 2 == 0) Direction.LEFT else Direction.RIGHT,
+                    direction = Direction.LEFT,
                     severity = Severity.MODERATE,
                     arcLength = 80.0,
                     startIndex = i * 12,

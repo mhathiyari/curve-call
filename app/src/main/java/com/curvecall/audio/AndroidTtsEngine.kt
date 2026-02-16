@@ -7,6 +7,7 @@ import android.media.AudioManager
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import com.curvecall.narration.TtsDurationCalibrator
 import com.curvecall.narration.TtsEngine
 import com.curvecall.narration.types.NarrationEvent
 import java.util.Locale
@@ -25,7 +26,10 @@ import java.util.Locale
  * - Higher priority interrupts lower priority in-progress speech.
  * - Same or lower priority queues after current speech.
  */
-class AndroidTtsEngine(private val context: Context) : TtsEngine {
+class AndroidTtsEngine(
+    private val context: Context,
+    private val calibrator: TtsDurationCalibrator? = null
+) : TtsEngine {
 
     private var tts: TextToSpeech? = null
     private var audioManager: AudioManager? = null
@@ -34,6 +38,13 @@ class AndroidTtsEngine(private val context: Context) : TtsEngine {
     private var listener: TtsEngine.TtsListener? = null
     private var speechRate: Float = 1.0f
     private var isInitialized = false
+    private var hasAudioFocus = false
+    private var utteranceStartTimeMs: Long = 0L
+
+    private val audioAttributes = AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+        .build()
 
     override fun setTtsListener(listener: TtsEngine.TtsListener?) {
         this.listener = listener
@@ -46,24 +57,21 @@ class AndroidTtsEngine(private val context: Context) : TtsEngine {
             if (status == TextToSpeech.SUCCESS) {
                 tts?.language = Locale.US
                 tts?.setSpeechRate(speechRate)
+                tts?.setAudioAttributes(audioAttributes)
                 setupUtteranceListener()
                 isInitialized = true
             }
         }
 
-        // Build audio focus request for AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
+        // Build audio focus request — held for the session, not per-utterance
         focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build()
-            )
+            .setAudioAttributes(audioAttributes)
             .setOnAudioFocusChangeListener { focusChange ->
                 when (focusChange) {
                     AudioManager.AUDIOFOCUS_LOSS,
                     AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
                         tts?.stop()
+                        hasAudioFocus = false
                     }
                 }
             }
@@ -73,12 +81,22 @@ class AndroidTtsEngine(private val context: Context) : TtsEngine {
     private fun setupUtteranceListener() {
         tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(utteranceId: String?) {
-                // Speech started
+                utteranceStartTimeMs = System.currentTimeMillis()
             }
 
             override fun onDone(utteranceId: String?) {
-                abandonAudioFocus()
+                // Record actual TTS duration for calibration
                 val event = currentEvent
+                if (event != null && utteranceStartTimeMs > 0 && calibrator != null) {
+                    val durationSec = (System.currentTimeMillis() - utteranceStartTimeMs) / 1000.0
+                    val wordCount = event.text.split("\\s+".toRegex()).count { it.isNotBlank() }
+                    calibrator.recordSample(wordCount, durationSec)
+                }
+                utteranceStartTimeMs = 0L
+
+                // Don't abandon audio focus here — hold it for the session to avoid
+                // audio mixer reconfiguration crackle between rapid narrations.
+                // Focus is released on stop() / shutdown().
                 currentEvent = null
                 if (event != null) {
                     listener?.onSpeechComplete(event)
@@ -87,7 +105,6 @@ class AndroidTtsEngine(private val context: Context) : TtsEngine {
 
             @Deprecated("Deprecated in Java")
             override fun onError(utteranceId: String?) {
-                abandonAudioFocus()
                 val event = currentEvent
                 currentEvent = null
                 if (event != null) {
@@ -96,7 +113,6 @@ class AndroidTtsEngine(private val context: Context) : TtsEngine {
             }
 
             override fun onError(utteranceId: String?, errorCode: Int) {
-                abandonAudioFocus()
                 val event = currentEvent
                 currentEvent = null
                 if (event != null) {
@@ -156,13 +172,14 @@ class AndroidTtsEngine(private val context: Context) : TtsEngine {
     override fun stop() {
         tts?.stop()
         currentEvent = null
-        abandonAudioFocus()
     }
 
     override fun setSpeechRate(rate: Float) {
         require(rate in 0.5f..2.0f) { "Speech rate must be in [0.5, 2.0], got $rate" }
         this.speechRate = rate
         tts?.setSpeechRate(rate)
+        // Reset calibration — speaking rate changed, old samples are invalid
+        calibrator?.reset()
     }
 
     override fun isSpeaking(): Boolean {
@@ -173,16 +190,23 @@ class AndroidTtsEngine(private val context: Context) : TtsEngine {
 
     override fun shutdown() {
         stop()
+        abandonAudioFocus()
         tts?.shutdown()
         tts = null
         isInitialized = false
     }
 
     private fun requestAudioFocus() {
-        focusRequest?.let { audioManager?.requestAudioFocus(it) }
+        if (hasAudioFocus) return
+        focusRequest?.let {
+            val result = audioManager?.requestAudioFocus(it)
+            hasAudioFocus = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        }
     }
 
     private fun abandonAudioFocus() {
+        if (!hasAudioFocus) return
         focusRequest?.let { audioManager?.abandonAudioFocusRequest(it) }
+        hasAudioFocus = false
     }
 }

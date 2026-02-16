@@ -50,9 +50,10 @@ object CompoundDetector {
         // Map from curve startIndex to updated CurveSegment
         val compoundUpdates = mutableMapOf<Int, Pair<CompoundType, Int>>()
 
-        // Detect series first (3+ linked curves), then S-bends/chicanes within remaining pairs
-        detectSeries(curves, curvePairs, config, compoundUpdates)
+        // Detect S-bends/chicanes first — they're the most safety-critical compound
+        // pattern (require counter-steer). Then series from remaining curves.
         detectSBendsAndChicanes(curves, curvePairs, config, compoundUpdates)
+        detectSeries(curves, curvePairs, config, compoundUpdates)
         detectTighteningSequences(curves, curvePairs, config, compoundUpdates)
 
         // Apply compound annotations to the segments

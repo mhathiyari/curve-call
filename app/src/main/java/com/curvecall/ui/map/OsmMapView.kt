@@ -2,6 +2,7 @@ package com.curvecall.ui.map
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -125,6 +126,8 @@ fun SessionMap(
     val lifecycleOwner = LocalLifecycleOwner.current
 
     val gpsMarkerOverlay = remember { GpsMarkerOverlay() }
+    // Track the last zoom level we applied so we only animate when it changes meaningfully
+    val lastAppliedZoom = remember { mutableDoubleStateOf(16.0) }
     val mapView = remember {
         MapView(context).apply {
             setTileSource(DarkTileSource)
@@ -188,8 +191,15 @@ fun SessionMap(
                 // Heading-up: rotate map opposite to bearing
                 mv.mapOrientation = -currentBearing
 
-                // Animate to position with dynamic zoom level
-                mv.controller.animateTo(geoPoint, targetZoom, 800L)
+                // Set position immediately (no animation) to avoid flicker
+                mv.controller.setCenter(geoPoint)
+
+                // Only animate zoom when it changes by more than 0.2 levels
+                val zoomDelta = kotlin.math.abs(targetZoom - lastAppliedZoom.doubleValue)
+                if (zoomDelta > 0.2) {
+                    mv.controller.animateTo(geoPoint, targetZoom, 600L)
+                    lastAppliedZoom.doubleValue = targetZoom
+                }
             }
 
             mv.invalidate()

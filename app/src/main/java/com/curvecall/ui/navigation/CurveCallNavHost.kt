@@ -13,7 +13,10 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import com.curvecall.ui.about.AboutScreen
+import com.curvecall.ui.destination.DestinationScreen
 import com.curvecall.ui.home.HomeScreen
+import com.curvecall.ui.preview.RoutePreviewScreen
+import com.curvecall.ui.regions.RegionScreen
 import com.curvecall.ui.session.SessionScreen
 import com.curvecall.ui.settings.SettingsScreen
 
@@ -38,11 +41,14 @@ fun CurveCallNavHost(
             exitTransition = { fadeOut(tween(200)) }
         ) {
             HomeScreen(
-                onNavigateToSession = {
-                    navController.navigate(NavRoutes.SESSION)
-                },
                 onNavigateToSettings = {
                     navController.navigate(NavRoutes.SETTINGS)
+                },
+                onNavigateToDestination = {
+                    navController.navigate(NavRoutes.DESTINATION)
+                },
+                onNavigateToRoutePreview = {
+                    navController.navigate(NavRoutes.ROUTE_PREVIEW)
                 }
             )
         }
@@ -91,6 +97,9 @@ fun CurveCallNavHost(
                 },
                 onNavigateToAbout = {
                     navController.navigate(NavRoutes.ABOUT)
+                },
+                onNavigateToRegions = {
+                    navController.navigate(NavRoutes.REGIONS)
                 }
             )
         }
@@ -113,6 +122,85 @@ fun CurveCallNavHost(
             AboutScreen(
                 onNavigateBack = {
                     navController.popBackStack()
+                }
+            )
+        }
+
+        composable(
+            NavRoutes.REGIONS,
+            enterTransition = {
+                slideInHorizontally(
+                    initialOffsetX = { it },
+                    animationSpec = tween(300)
+                ) + fadeIn(tween(250))
+            },
+            popExitTransition = {
+                slideOutHorizontally(
+                    targetOffsetX = { it },
+                    animationSpec = tween(300)
+                ) + fadeOut(tween(200))
+            }
+        ) {
+            RegionScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                }
+            )
+        }
+
+        composable(
+            NavRoutes.DESTINATION,
+            enterTransition = {
+                slideInVertically(
+                    initialOffsetY = { it / 3 },
+                    animationSpec = tween(350)
+                ) + fadeIn(tween(300))
+            },
+            popExitTransition = {
+                slideOutVertically(
+                    targetOffsetY = { it / 3 },
+                    animationSpec = tween(300)
+                ) + fadeOut(tween(200))
+            }
+        ) {
+            DestinationScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onDestinationConfirmed = { _, _, _ ->
+                    navController.navigate(NavRoutes.ROUTE_PREVIEW)
+                },
+                onLoadGpx = {
+                    // Navigate back to home where the GPX picker lives
+                    navController.popBackStack()
+                }
+            )
+        }
+
+        composable(
+            NavRoutes.ROUTE_PREVIEW,
+            enterTransition = {
+                slideInVertically(
+                    initialOffsetY = { it / 3 },
+                    animationSpec = tween(350)
+                ) + fadeIn(tween(300))
+            },
+            popExitTransition = {
+                slideOutVertically(
+                    targetOffsetY = { it / 3 },
+                    animationSpec = tween(300)
+                ) + fadeOut(tween(200))
+            }
+        ) {
+            RoutePreviewScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onStartSession = {
+                    navController.navigate(NavRoutes.SESSION) {
+                        // Clear back stack up to home so "back" from session goes home
+                        popUpTo(NavRoutes.HOME)
+                    }
                 }
             )
         }

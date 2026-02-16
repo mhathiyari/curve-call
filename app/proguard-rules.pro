@@ -41,9 +41,31 @@
 -keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}
 -keepnames class kotlinx.coroutines.CoroutineExceptionHandler {}
 
+# ---- GraphHopper (on-device routing) ----
+# Keep core routing classes (uses reflection for profile/config loading)
+-keep class com.graphhopper.** { *; }
+-keep class com.carrotsearch.hppc.** { *; }
+-keep class org.locationtech.jts.** { *; }
+# Jackson is used by GraphHopper for custom model JSON parsing
+-keep class com.fasterxml.jackson.** { *; }
+-dontwarn com.fasterxml.jackson.**
+# Suppress warnings for excluded/unavailable dependencies
+-dontwarn java.awt.**
+-dontwarn javax.xml.stream.**
+-dontwarn org.apache.xmlgraphics.**
+-dontwarn org.openstreetmap.osmosis.**
+-dontwarn org.codehaus.stax2.**
+-dontwarn com.ctc.wstx.**
+
+# ---- SLF4J / Logback Android ----
+-keep class org.slf4j.** { *; }
+-keep class ch.qos.logback.** { *; }
+-dontwarn ch.qos.logback.core.net.**
+
 # ---- CurveCall engine and narration types (data classes used across modules) ----
 -keep class com.curvecall.engine.types.** { *; }
 -keep class com.curvecall.narration.types.** { *; }
+-keep class com.curvecall.data.routing.** { *; }
 
 # ---- Compose ----
 -keep class androidx.compose.** { *; }

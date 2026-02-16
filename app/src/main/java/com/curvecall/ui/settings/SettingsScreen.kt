@@ -70,6 +70,7 @@ import kotlin.math.roundToInt
 fun SettingsScreen(
     onNavigateBack: () -> Unit,
     onNavigateToAbout: () -> Unit,
+    onNavigateToRegions: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -316,6 +317,19 @@ fun SettingsScreen(
                     checked = uiState.surfaceWarnings,
                     onCheckedChange = { viewModel.setSurfaceWarnings(it) }
                 )
+            }
+
+            SettingDivider()
+
+            // ===== OFFLINE DATA SECTION =====
+            SectionHeader("Offline Data")
+
+            Button(
+                onClick = onNavigateToRegions,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = CurveCallPrimary)
+            ) {
+                Text("Manage Offline Regions")
             }
 
             Spacer(modifier = Modifier.height(32.dp))

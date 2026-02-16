@@ -222,10 +222,25 @@ class NarrationQueue {
     }
 
     /**
-     * Generate a unique key for an event based on its text and curve distance.
-     * This is used for deduplication and delivery tracking.
+     * Generate a stable key for an event using curve identity or position bucketing.
+     *
+     * For curve events: uses `startIndex` which is unique per curve and stable
+     * across regeneration. The 10m bucket adds jitter tolerance — the same curve
+     * with slight distance drift still matches.
+     *
+     * For non-curve events (straights, warnings): uses exact distance + text hash
+     * so different straights at different positions are never confused.
      */
     private fun eventKey(event: NarrationEvent): String {
-        return "${event.curveDistanceFromStart}:${event.text}"
+        val curve = event.associatedCurve
+        return if (curve != null) {
+            // Curve events: stable identity from startIndex, bucketed for jitter tolerance
+            val bucket = (event.curveDistanceFromStart / 10.0).toInt()
+            "c:$bucket:${curve.startIndex}"
+        } else {
+            // Non-curve events: use exact distance to avoid collisions between
+            // different straights/warnings with the same text
+            "s:${event.curveDistanceFromStart}:${event.text.hashCode()}"
+        }
     }
 }

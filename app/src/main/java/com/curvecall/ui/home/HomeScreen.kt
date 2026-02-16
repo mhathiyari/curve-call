@@ -77,6 +77,7 @@ import com.curvecall.ui.theme.CurveCallPrimaryDim
 import com.curvecall.ui.theme.CurveCallPrimaryVariant
 import com.curvecall.ui.theme.DarkBackground
 import com.curvecall.ui.theme.DarkSurfaceElevated
+import com.curvecall.ui.theme.SeverityModerate
 import kotlinx.coroutines.delay
 
 /**
@@ -88,8 +89,9 @@ import kotlinx.coroutines.delay
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
-    onNavigateToSession: () -> Unit,
     onNavigateToSettings: () -> Unit,
+    onNavigateToDestination: () -> Unit = {},
+    onNavigateToRoutePreview: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -110,10 +112,10 @@ fun HomeScreen(
         }
     }
 
-    // Navigate to session when route is analyzed and ready
+    // Navigate to route preview when route is analyzed and ready
     LaunchedEffect(uiState.isReadyForSession) {
         if (uiState.isReadyForSession) {
-            onNavigateToSession()
+            onNavigateToRoutePreview()
             viewModel.resetSessionState()
         }
     }
@@ -237,7 +239,38 @@ fun HomeScreen(
 
                     Spacer(modifier = Modifier.height(24.dp))
 
-                    // -- Load GPX Button (gradient border) --
+                    // -- No offline data warning --
+                    AnimatedVisibility(
+                        visible = !uiState.hasOfflineRegions,
+                        enter = fadeIn(),
+                        exit = fadeOut()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(SeverityModerate.copy(alpha = 0.1f))
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "No offline regions downloaded. Go to Settings to download one.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = SeverityModerate.copy(alpha = 0.8f),
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
+
+                    // -- Pick Destination Button (primary, gradient border) --
+                    PickDestinationButton(
+                        onClick = onNavigateToDestination
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // -- Load GPX Button (secondary) --
                     LoadRouteButton(
                         isLoading = uiState.isLoading,
                         loadingMessage = uiState.loadingMessage,
@@ -428,7 +461,61 @@ private fun ModeOption(
 }
 
 /**
- * Load route button with gradient border glow effect.
+ * Primary action — navigate to the destination picker.
+ */
+@Composable
+private fun PickDestinationButton(
+    onClick: () -> Unit
+) {
+    val shape = RoundedCornerShape(14.dp)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .border(
+                width = 1.5.dp,
+                brush = Brush.linearGradient(
+                    colors = listOf(
+                        CurveCallPrimary.copy(alpha = 0.7f),
+                        CurveCallPrimaryVariant.copy(alpha = 0.4f),
+                        CurveCallPrimary.copy(alpha = 0.7f)
+                    )
+                ),
+                shape = shape
+            )
+            .background(
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        CurveCallPrimary.copy(alpha = 0.12f),
+                        CurveCallPrimary.copy(alpha = 0.03f)
+                    )
+                ),
+                shape = shape
+            )
+            .clip(shape)
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Default.NearMe,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = CurveCallPrimary
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = "Pick Destination",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White
+            )
+        }
+    }
+}
+
+/**
+ * Secondary action — load a GPX file.
  */
 @Composable
 private fun LoadRouteButton(
@@ -442,24 +529,15 @@ private fun LoadRouteButton(
             .fillMaxWidth()
             .height(56.dp)
             .border(
-                width = 1.5.dp,
+                width = 1.dp,
                 brush = Brush.linearGradient(
                     colors = if (isLoading) listOf(
-                        CurveCallPrimary.copy(alpha = 0.3f),
-                        CurveCallPrimaryVariant.copy(alpha = 0.2f)
+                        CurveCallPrimary.copy(alpha = 0.2f),
+                        CurveCallPrimaryVariant.copy(alpha = 0.1f)
                     ) else listOf(
-                        CurveCallPrimary.copy(alpha = 0.7f),
-                        CurveCallPrimaryVariant.copy(alpha = 0.4f),
-                        CurveCallPrimary.copy(alpha = 0.7f)
-                    )
-                ),
-                shape = shape
-            )
-            .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        CurveCallPrimary.copy(alpha = 0.08f),
-                        Color.Transparent
+                        CurveCallPrimary.copy(alpha = 0.3f),
+                        CurveCallPrimaryVariant.copy(alpha = 0.15f),
+                        CurveCallPrimary.copy(alpha = 0.3f)
                     )
                 ),
                 shape = shape

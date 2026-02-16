@@ -17,6 +17,8 @@ import com.curvecall.narration.types.TimingProfile
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.runBlocking
+import org.json.JSONArray
+import org.json.JSONObject
 import javax.inject.Inject
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "curvecall_prefs")
@@ -52,6 +54,7 @@ class UserPreferences @Inject constructor(
         val SURFACE_WARNINGS = booleanPreferencesKey("surface_warnings")
         val DISCLAIMER_ACCEPTED = booleanPreferencesKey("disclaimer_accepted")
         val RECENT_ROUTES = stringSetPreferencesKey("recent_routes")
+        val RECENT_DESTINATIONS = stringPreferencesKey("recent_destinations")
     }
 
     // -- Driving Mode --
@@ -241,5 +244,130 @@ class UserPreferences @Inject constructor(
             current.remove(routeUri)
             prefs[Keys.RECENT_ROUTES] = current
         }
+    }
+
+    // -- Recent Destinations (for Destination Picker) --
+
+    /**
+     * A saved destination (recent or favorite) for the destination picker.
+     * Stored as JSON in DataStore.
+     */
+    data class SavedDestination(
+        val name: String,
+        val lat: Double,
+        val lon: Double,
+        val timestamp: Long,
+        val isFavorite: Boolean = false
+    )
+
+    /**
+     * Flow of all saved destinations (both recent and favorites).
+     * Parsed from a JSON string stored in DataStore.
+     */
+    val recentDestinations: Flow<List<SavedDestination>> = dataStore.data.map { prefs ->
+        val json = prefs[Keys.RECENT_DESTINATIONS] ?: return@map emptyList()
+        parseDestinationsJson(json)
+    }
+
+    /**
+     * Add a destination to the recent destinations list.
+     * If the destination already exists (by lat/lon), it is updated with the new timestamp.
+     * Keeps at most 20 entries.
+     */
+    suspend fun addRecentDestination(name: String, lat: Double, lon: Double) {
+        dataStore.edit { prefs ->
+            val json = prefs[Keys.RECENT_DESTINATIONS] ?: "[]"
+            val destinations = parseDestinationsJson(json).toMutableList()
+
+            // Remove existing entry with same coordinates (if any)
+            destinations.removeAll { isSameLocation(it.lat, it.lon, lat, lon) }
+
+            // Add new entry at the front
+            destinations.add(
+                0,
+                SavedDestination(
+                    name = name,
+                    lat = lat,
+                    lon = lon,
+                    timestamp = System.currentTimeMillis(),
+                    isFavorite = false
+                )
+            )
+
+            // Keep at most 20 (but never remove favorites)
+            val favorites = destinations.filter { it.isFavorite }
+            val recents = destinations.filter { !it.isFavorite }
+            val trimmedRecents = recents.take(20)
+            val merged = (favorites + trimmedRecents).distinctBy { "${it.lat},${it.lon}" }
+
+            prefs[Keys.RECENT_DESTINATIONS] = destinationsToJson(merged)
+        }
+    }
+
+    /**
+     * Toggle the favorite status of a destination identified by lat/lon.
+     */
+    suspend fun toggleFavorite(lat: Double, lon: Double) {
+        dataStore.edit { prefs ->
+            val json = prefs[Keys.RECENT_DESTINATIONS] ?: "[]"
+            val destinations = parseDestinationsJson(json).toMutableList()
+
+            val index = destinations.indexOfFirst { isSameLocation(it.lat, it.lon, lat, lon) }
+            if (index >= 0) {
+                val dest = destinations[index]
+                destinations[index] = dest.copy(isFavorite = !dest.isFavorite)
+                prefs[Keys.RECENT_DESTINATIONS] = destinationsToJson(destinations)
+            }
+        }
+    }
+
+    /**
+     * Parse a JSON string into a list of [SavedDestination].
+     */
+    private fun parseDestinationsJson(json: String): List<SavedDestination> {
+        return try {
+            val array = JSONArray(json)
+            val results = mutableListOf<SavedDestination>()
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                results.add(
+                    SavedDestination(
+                        name = obj.optString("name", "Unknown"),
+                        lat = obj.optDouble("lat", 0.0),
+                        lon = obj.optDouble("lon", 0.0),
+                        timestamp = obj.optLong("timestamp", 0L),
+                        isFavorite = obj.optBoolean("isFavorite", false)
+                    )
+                )
+            }
+            results
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    /**
+     * Serialize a list of [SavedDestination] into a JSON string.
+     */
+    private fun destinationsToJson(destinations: List<SavedDestination>): String {
+        val array = JSONArray()
+        for (dest in destinations) {
+            val obj = JSONObject().apply {
+                put("name", dest.name)
+                put("lat", dest.lat)
+                put("lon", dest.lon)
+                put("timestamp", dest.timestamp)
+                put("isFavorite", dest.isFavorite)
+            }
+            array.put(obj)
+        }
+        return array.toString()
+    }
+
+    /**
+     * Check if two lat/lon pairs refer to the same location (within ~11m tolerance).
+     */
+    private fun isSameLocation(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Boolean {
+        return Math.abs(lat1 - lat2) < 0.0001 && Math.abs(lon1 - lon2) < 0.0001
     }
 }

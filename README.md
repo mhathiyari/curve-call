@@ -180,6 +180,38 @@ The engine and narration modules have pure Kotlin unit tests:
 
 CurveCue is a **driving aid**, not a safety system. Speed advisories and lean angle suggestions are calculated estimates based on road geometry only. They do not account for surface condition, weather, traffic, visibility, or vehicle capability. The driver is solely responsible for all driving decisions. Never interact with the UI while driving — use audio narration only.
 
+## Disclaimer
+
+**This software is experimental and provided strictly "as is."** CurveCue is a personal project in active development and is NOT intended for use as a reliable navigation or safety system. By using this software, you acknowledge and agree that:
+
+- The app may contain bugs, produce inaccurate narrations, give incorrect speed advisories, or fail without warning.
+- You use CurveCue entirely **at your own risk**. The developer(s) accept **no responsibility or liability** for any damage, injury, accident, loss, or death arising from the use or misuse of this software.
+- CurveCue is not a substitute for attentive driving, proper route planning, or any certified navigation/safety system.
+- All driving decisions remain solely your responsibility at all times.
+- This software should never be relied upon as your primary or sole source of road information.
+
+**If you are not comfortable with these terms, do not use this software.**
+
 ## License
 
-All rights reserved.
+MIT License
+
+Copyright (c) 2025 Mustafa Hathiyari
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

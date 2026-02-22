@@ -1,6 +1,6 @@
-# CurveCall
+# CurveCue
 
-**Your digital co-driver.** CurveCall is an Android app that narrates upcoming curves in real time as you drive or ride a route. Load a GPX file, hit start, and the app speaks turn-by-turn curve warnings through your speakers — so your eyes stay on the road.
+**Your digital co-driver.** CurveCue is an Android app that narrates upcoming curves in real time as you drive or ride a route. Load a GPX file, hit start, and the app speaks turn-by-turn curve warnings through your speakers — so your eyes stay on the road.
 
 Built for spirited drives on mountain roads, track days with unfamiliar layouts, and motorcycle touring through twisties.
 
@@ -12,7 +12,7 @@ Built for spirited drives on mountain roads, track days with unfamiliar layouts,
 
 1. **Load a GPX route** — Export from any mapping app (Calimoto, Kurviger, Google Maps, etc.)
 2. **Select your mode** — Car or Motorcycle (motorcycle adds lean angle and surface warnings)
-3. **Drive** — CurveCall matches your GPS position to the route in real time and speaks upcoming curves before you reach them
+3. **Drive** — CurveCue matches your GPS position to the route in real time and speaks upcoming curves before you reach them
 
 Example narrations:
 - *"Left curve ahead, moderate"*
@@ -26,7 +26,8 @@ Example narrations:
 - **Severity classification** — Curves classified into 5 levels by radius: Gentle (>200m), Moderate (100–200m), Firm (50–100m), Sharp (25–50m), Hairpin (<25m)
 - **Compound detection** — Identifies S-bends, chicanes, and series of linked curves as a single narration
 - **Speed advisories** — Physics-based safe speed recommendations derived from road geometry and lateral G limits
-- **Motorcycle mode** — Lean angle suggestions, surface condition warnings (via Overpass API), sportier timing profiles
+- **Motorcycle mode** — Lean angle suggestions, surface condition warnings (gravel, dirt, cobblestone via Overpass API), sportier timing profiles
+- **Road metadata** — Surface type, road name, and condition data integrated into narrations
 - **Live map** — Heading-up OpenStreetMap view with severity-colored route overlay and dynamic zoom
 - **Offline capable** — Pre-caches map tiles along your route corridor for areas with no signal
 - **Audio ducking** — Automatically lowers music volume during narrations, then restores it
@@ -35,7 +36,7 @@ Example narrations:
 
 ## Architecture
 
-CurveCall is a multi-module Kotlin project with a clean separation between pure logic and Android platform code.
+CurveCue is a multi-module Kotlin project with a clean separation between pure logic and Android platform code.
 
 ```
 curve_call/
@@ -64,7 +65,7 @@ Generates natural language from curve data and decides *when* to speak based on 
 Trigger Distance = TTS Duration + Reaction Time + Braking Distance (v²/2a)
 ```
 
-Three timing profiles — Relaxed (2.0s reaction), Normal (1.5s), Sporty (1.2s) — plus cooldown enforcement to prevent cognitive overload.
+Three timing profiles — Relaxed (2.0s reaction), Normal (1.5s), Sporty (1.2s) — with immediate voice chaining for consecutive curve announcements.
 
 ### App Module
 
@@ -81,8 +82,8 @@ Three timing profiles — Relaxed (2.0s reaction), Normal (1.5s), Sporty (1.2s) 
 
 ```bash
 # Clone
-git clone https://github.com/mhathiyari/curve-call.git
-cd curve-call
+git clone https://github.com/mhathiyari/curve_call.git
+cd curve_call
 
 # Build debug APK
 ./gradlew assembleDebug
@@ -177,7 +178,7 @@ The engine and narration modules have pure Kotlin unit tests:
 
 ## Safety
 
-CurveCall is a **driving aid**, not a safety system. Speed advisories and lean angle suggestions are calculated estimates based on road geometry only. They do not account for surface condition, weather, traffic, visibility, or vehicle capability. The driver is solely responsible for all driving decisions. Never interact with the UI while driving — use audio narration only.
+CurveCue is a **driving aid**, not a safety system. Speed advisories and lean angle suggestions are calculated estimates based on road geometry only. They do not account for surface condition, weather, traffic, visibility, or vehicle capability. The driver is solely responsible for all driving decisions. Never interact with the UI while driving — use audio narration only.
 
 ## License
 

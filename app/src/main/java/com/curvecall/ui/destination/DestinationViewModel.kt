@@ -20,6 +20,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 
+enum class ActiveField { FROM, TO }
+
+sealed class LocationSelection {
+    object CurrentLocation : LocationSelection()
+    data class SpecificLocation(val name: String, val latLon: LatLon) : LocationSelection()
+}
+
 /**
  * ViewModel for the Destination picker screen.
  *
@@ -49,10 +56,12 @@ class DestinationViewModel @Inject constructor(
     )
 
     data class DestinationUiState(
+        val activeField: ActiveField = ActiveField.TO,
+        val fromSelection: LocationSelection = LocationSelection.CurrentLocation,
+        val toSelection: LocationSelection? = null,
         val searchQuery: String = "",
         val searchResults: List<GeocodingService.SearchResult> = emptyList(),
         val isSearching: Boolean = false,
-        val selectedDestination: SelectedDestination? = null,
         val recentDestinations: List<SavedDestination> = emptyList(),
         val favoriteDestinations: List<SavedDestination> = emptyList(),
         val errorMessage: String? = null,
@@ -137,6 +146,42 @@ class DestinationViewModel @Inject constructor(
         isFavorite = isFavorite
     )
 
+    fun onActiveFieldChanged(field: ActiveField) {
+        _uiState.value = _uiState.value.copy(
+            activeField = field,
+            searchQuery = "",
+            searchResults = emptyList(),
+            isSearching = false
+        )
+    }
+
+    fun onSwapFields() {
+        val current = _uiState.value
+        val toSel = current.toSelection ?: return // nothing to swap if TO is empty
+
+        // If FROM was CurrentLocation, we can't place it as TO (no coordinates yet),
+        // so TO becomes null and user must re-pick.
+        val newTo: LocationSelection? = when (current.fromSelection) {
+            is LocationSelection.CurrentLocation -> null
+            is LocationSelection.SpecificLocation -> current.fromSelection
+        }
+
+        _uiState.value = current.copy(
+            fromSelection = toSel,
+            toSelection = newTo,
+            searchQuery = "",
+            searchResults = emptyList()
+        )
+    }
+
+    fun onResetToCurrentLocation() {
+        _uiState.value = _uiState.value.copy(
+            fromSelection = LocationSelection.CurrentLocation,
+            searchQuery = "",
+            searchResults = emptyList()
+        )
+    }
+
     fun onSearchQueryChanged(query: String) {
         _uiState.value = _uiState.value.copy(searchQuery = query)
         searchJob?.cancel()
@@ -168,107 +213,136 @@ class DestinationViewModel @Inject constructor(
     }
 
     fun onSearchResultSelected(result: GeocodingService.SearchResult) {
-        _uiState.value = _uiState.value.copy(
-            selectedDestination = SelectedDestination(
-                name = result.displayName,
-                latLon = LatLon(result.lat, result.lon)
-            ),
-            searchResults = emptyList(),
-            searchQuery = ""
+        val selection = LocationSelection.SpecificLocation(
+            name = result.displayName,
+            latLon = LatLon(result.lat, result.lon)
         )
+        applySelectionToActiveField(selection)
     }
 
     fun onMapLongPress(lat: Double, lon: Double) {
         val coordName = "%.4f, %.4f".format(lat, lon)
-        _uiState.value = _uiState.value.copy(
-            selectedDestination = SelectedDestination(
-                name = coordName,
-                latLon = LatLon(lat, lon)
-            )
+        val selection = LocationSelection.SpecificLocation(
+            name = coordName,
+            latLon = LatLon(lat, lon)
         )
+        val fieldAtTimeOfPress = _uiState.value.activeField
+        applySelectionToActiveField(selection)
 
         viewModelScope.launch(Dispatchers.IO) {
             val displayName = geocodingService.reverseGeocode(lat, lon)
             if (displayName != null) {
-                val current = _uiState.value.selectedDestination
-                if (current != null &&
-                    current.latLon.lat == lat &&
-                    current.latLon.lon == lon
-                ) {
-                    _uiState.value = _uiState.value.copy(
-                        selectedDestination = current.copy(name = displayName)
-                    )
+                val current = _uiState.value
+                val updated = LocationSelection.SpecificLocation(
+                    name = displayName,
+                    latLon = LatLon(lat, lon)
+                )
+                when (fieldAtTimeOfPress) {
+                    ActiveField.FROM -> {
+                        val existing = current.fromSelection as? LocationSelection.SpecificLocation
+                        if (existing?.latLon?.lat == lat && existing.latLon.lon == lon) {
+                            _uiState.value = current.copy(fromSelection = updated)
+                        }
+                    }
+                    ActiveField.TO -> {
+                        val existing = current.toSelection as? LocationSelection.SpecificLocation
+                        if (existing?.latLon?.lat == lat && existing.latLon.lon == lon) {
+                            _uiState.value = current.copy(toSelection = updated)
+                        }
+                    }
                 }
             }
         }
     }
 
     fun onSavedDestinationSelected(destination: SavedDestination) {
-        _uiState.value = _uiState.value.copy(
-            selectedDestination = SelectedDestination(
-                name = destination.name,
-                latLon = LatLon(destination.lat, destination.lon)
-            )
+        val selection = LocationSelection.SpecificLocation(
+            name = destination.name,
+            latLon = LatLon(destination.lat, destination.lon)
         )
+        applySelectionToActiveField(selection)
+    }
+
+    private fun applySelectionToActiveField(selection: LocationSelection.SpecificLocation) {
+        val current = _uiState.value
+        _uiState.value = when (current.activeField) {
+            ActiveField.FROM -> current.copy(
+                fromSelection = selection,
+                searchQuery = "",
+                searchResults = emptyList()
+            )
+            ActiveField.TO -> current.copy(
+                toSelection = selection,
+                searchQuery = "",
+                searchResults = emptyList()
+            )
+        }
     }
 
     /**
-     * Called when the user confirms the selected destination ("Route Here").
-     * Gets current GPS location, saves to recents, and triggers the RoutePipeline.
+     * Called when the user confirms the route.
+     * Resolves the FROM location (GPS or specific), saves TO to recents,
+     * and triggers the RoutePipeline.
      * Observe [uiState].isRouteReady for navigation trigger.
      */
     @SuppressLint("MissingPermission")
     fun onDestinationConfirmed() {
-        val selected = _uiState.value.selectedDestination ?: return
-        if (_uiState.value.isRouting) return // prevent double-tap
+        val current = _uiState.value
+        val toSelection = current.toSelection as? LocationSelection.SpecificLocation ?: return
+        if (current.isRouting) return // prevent double-tap
 
-        // Save to recents
+        // Save TO destination to recents
         viewModelScope.launch {
             userPreferences.addRecentDestination(
-                name = selected.name,
-                lat = selected.latLon.lat,
-                lon = selected.latLon.lon
+                name = toSelection.name,
+                lat = toSelection.latLon.lat,
+                lon = toSelection.latLon.lon
             )
         }
 
-        // Get GPS location and trigger routing
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 isRouting = true,
-                routingMessage = "Getting GPS location...",
+                routingMessage = "Preparing route...",
                 isRouteReady = false
             )
 
-            // Get current location: try cached first, then wait for fresh fix
-            val location = try {
-                locationProvider.getLastLocation()
-                    ?: withTimeoutOrNull(15_000L) {
-                        locationProvider.locationUpdates().first()
+            // Resolve FROM coordinates
+            val from: LatLon = when (current.fromSelection) {
+                is LocationSelection.CurrentLocation -> {
+                    _uiState.value = _uiState.value.copy(routingMessage = "Getting GPS location...")
+                    val location = try {
+                        locationProvider.getLastLocation()
+                            ?: withTimeoutOrNull(15_000L) {
+                                locationProvider.locationUpdates().first()
+                            }
+                    } catch (e: SecurityException) {
+                        _uiState.value = _uiState.value.copy(
+                            isRouting = false,
+                            errorMessage = "Location permission required. Please grant location access."
+                        )
+                        return@launch
                     }
-            } catch (e: SecurityException) {
-                _uiState.value = _uiState.value.copy(
-                    isRouting = false,
-                    errorMessage = "Location permission required. Please grant location access."
-                )
-                return@launch
+                    if (location == null) {
+                        _uiState.value = _uiState.value.copy(
+                            isRouting = false,
+                            errorMessage = "Could not get GPS location. Make sure GPS is enabled."
+                        )
+                        return@launch
+                    }
+                    LatLon(location.latitude, location.longitude)
+                }
+                is LocationSelection.SpecificLocation -> {
+                    current.fromSelection.latLon
+                }
             }
-
-            if (location == null) {
-                _uiState.value = _uiState.value.copy(
-                    isRouting = false,
-                    errorMessage = "Could not get GPS location. Make sure GPS is enabled."
-                )
-                return@launch
-            }
-
-            val from = LatLon(location.latitude, location.longitude)
 
             // Reset pipeline and start routing
             routePipeline.reset()
             routePipeline.computeRoute(
                 from = from,
-                to = selected.latLon,
-                routeName = selected.name
+                to = toSelection.latLon,
+                routeName = toSelection.name
             )
         }
     }
@@ -278,8 +352,12 @@ class DestinationViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(isRouteReady = false)
     }
 
-    fun clearSelection() {
-        _uiState.value = _uiState.value.copy(selectedDestination = null)
+    fun clearActiveField() {
+        val current = _uiState.value
+        _uiState.value = when (current.activeField) {
+            ActiveField.FROM -> current.copy(fromSelection = LocationSelection.CurrentLocation)
+            ActiveField.TO -> current.copy(toSelection = null)
+        }
     }
 
     fun toggleFavorite(destination: SavedDestination) {

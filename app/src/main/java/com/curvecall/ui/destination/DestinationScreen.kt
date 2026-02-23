@@ -15,8 +15,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -33,12 +35,15 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.NearMe
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -60,8 +65,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -76,8 +84,10 @@ import com.curvecall.ui.theme.CurveCuePrimary
 import com.curvecall.ui.theme.DarkBackground
 import com.curvecall.ui.theme.DarkSurfaceElevated
 import com.curvecall.ui.theme.DarkSurfaceHighest
+import com.curvecall.ui.theme.SeverityGentle
 import org.osmdroid.events.MapEventsReceiver
 import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
+import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.util.MapTileIndex
 import org.osmdroid.views.MapView
@@ -106,19 +116,18 @@ private val DarkTileSource = object : OnlineTileSourceBase(
 }
 
 /**
- * Destination picker screen.
+ * Route planning screen with FROM and TO fields.
  *
- * Lets the user choose a destination via:
+ * Lets the user choose origin and destination via:
  * - Text search (Nominatim geocoding)
  * - Long-press pin drop on the map
  * - Selecting from recent/favorite destinations
  *
- * When a destination is confirmed, [onDestinationConfirmed] is called with
- * the selected lat/lon and name, allowing the navigation layer to proceed
- * to routing.
+ * FROM defaults to "Current Location" (GPS) but can be changed to any location.
+ * The active field (FROM or TO) receives search results and map pin drops.
  *
  * @param onNavigateBack Called when the back button is pressed
- * @param onDestinationConfirmed Called with (lat, lon, name) when the user confirms a destination
+ * @param onDestinationConfirmed Called with (lat, lon, name) when routing completes
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -155,15 +164,28 @@ fun DestinationScreen(
     // Navigate to route preview when routing completes
     LaunchedEffect(uiState.isRouteReady) {
         if (uiState.isRouteReady) {
-            val dest = uiState.selectedDestination
+            val to = uiState.toSelection as? LocationSelection.SpecificLocation
             onDestinationConfirmed(
-                dest?.latLon?.lat ?: 0.0,
-                dest?.latLon?.lon ?: 0.0,
-                dest?.name ?: ""
+                to?.latLon?.lat ?: 0.0,
+                to?.latLon?.lon ?: 0.0,
+                to?.name ?: ""
             )
             viewModel.onRouteNavigated()
         }
     }
+
+    // Derive display names
+    val fromDisplayName = when (uiState.fromSelection) {
+        is LocationSelection.CurrentLocation -> "Current Location"
+        is LocationSelection.SpecificLocation ->
+            (uiState.fromSelection as LocationSelection.SpecificLocation).name
+    }
+    val toDisplayName = (uiState.toSelection as? LocationSelection.SpecificLocation)?.name ?: ""
+    val isFromCurrentLocation = uiState.fromSelection is LocationSelection.CurrentLocation
+
+    // Extract coordinates for map markers
+    val fromCoords = (uiState.fromSelection as? LocationSelection.SpecificLocation)?.latLon
+    val toCoords = (uiState.toSelection as? LocationSelection.SpecificLocation)?.latLon
 
     Scaffold(
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
@@ -172,7 +194,7 @@ fun DestinationScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = "Choose Destination",
+                        text = "Plan Route",
                         style = MaterialTheme.typography.titleMedium,
                         color = Color.White
                     )
@@ -197,35 +219,51 @@ fun DestinationScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // Map + search bar + overlays in a single Box so Compose
+            // Map + FROM/TO bar + overlays in a single Box so Compose
             // elements draw on top of the native AndroidView (osmdroid).
             Box(modifier = Modifier.weight(1f)) {
                 // -- Map view (drawn first, behind everything) --
                 DestinationMapView(
-                    selectedLat = uiState.selectedDestination?.latLon?.lat,
-                    selectedLon = uiState.selectedDestination?.latLon?.lon,
+                    fromLat = fromCoords?.lat,
+                    fromLon = fromCoords?.lon,
+                    toLat = toCoords?.lat,
+                    toLon = toCoords?.lon,
                     onMapLongPress = viewModel::onMapLongPress,
                     modifier = Modifier.fillMaxSize()
                 )
 
-                // -- Search bar overlaid on top of map --
-                SearchBar(
-                    query = uiState.searchQuery,
+                // -- FROM / TO field bar overlaid on top of map --
+                FromToFieldBar(
+                    fromDisplayName = fromDisplayName,
+                    toDisplayName = toDisplayName,
+                    activeField = uiState.activeField,
+                    searchQuery = uiState.searchQuery,
                     isSearching = uiState.isSearching,
-                    onQueryChanged = viewModel::onSearchQueryChanged,
+                    isFromCurrentLocation = isFromCurrentLocation,
+                    onActiveFieldChanged = viewModel::onActiveFieldChanged,
+                    onSearchQueryChanged = viewModel::onSearchQueryChanged,
+                    onSwap = viewModel::onSwapFields,
+                    onClearFrom = {
+                        viewModel.onActiveFieldChanged(ActiveField.FROM)
+                        viewModel.onResetToCurrentLocation()
+                    },
+                    onClearTo = {
+                        viewModel.onActiveFieldChanged(ActiveField.TO)
+                        viewModel.clearActiveField()
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 8.dp)
                         .align(Alignment.TopStart)
                 )
 
-                // -- Search results overlay (below search bar) --
+                // -- Search results overlay (below FROM/TO bar) --
                 androidx.compose.animation.AnimatedVisibility(
                     visible = uiState.searchResults.isNotEmpty(),
                     enter = fadeIn() + slideInVertically(),
                     exit = fadeOut() + slideOutVertically(),
                     modifier = Modifier
-                        .padding(top = 72.dp)
+                        .padding(top = 136.dp)
                         .align(Alignment.TopStart)
                 ) {
                     SearchResultsList(
@@ -239,9 +277,9 @@ fun DestinationScreen(
                     )
                 }
 
-                // -- "Route Here" FAB when destination is selected --
+                // -- "Route" button when TO is selected --
                 androidx.compose.animation.AnimatedVisibility(
-                    visible = uiState.selectedDestination != null,
+                    visible = uiState.toSelection != null,
                     enter = fadeIn() + slideInVertically { it },
                     exit = fadeOut() + slideOutVertically { it },
                     modifier = Modifier
@@ -249,22 +287,20 @@ fun DestinationScreen(
                         .padding(bottom = 16.dp)
                 ) {
                     if (uiState.isRouting) {
-                        // Show routing progress
                         RoutingProgressCard(message = uiState.routingMessage)
-                    } else {
-                        uiState.selectedDestination?.let { dest ->
-                            RouteHereButton(
-                                destinationName = dest.name,
-                                onRouteHere = { viewModel.onDestinationConfirmed() },
-                                onDismiss = viewModel::clearSelection
-                            )
-                        }
+                    } else if (uiState.toSelection != null) {
+                        RouteButton(
+                            fromName = fromDisplayName,
+                            toName = toDisplayName,
+                            onRoute = { viewModel.onDestinationConfirmed() }
+                        )
                     }
                 }
             }
 
             // -- Bottom section: Recents, Favorites --
             BottomSection(
+                activeField = uiState.activeField,
                 recentDestinations = uiState.recentDestinations,
                 favoriteDestinations = uiState.favoriteDestinations,
                 onDestinationSelected = viewModel::onSavedDestinationSelected,
@@ -278,70 +314,258 @@ fun DestinationScreen(
 }
 
 // ============================================================
-// Search Bar
+// FROM / TO Field Bar
 // ============================================================
 
+private val FromIndicatorColor = SeverityGentle  // Green for origin
+private val ToIndicatorColor = CurveCuePrimary   // Amber for destination
+
 @Composable
-private fun SearchBar(
-    query: String,
+private fun FromToFieldBar(
+    fromDisplayName: String,
+    toDisplayName: String,
+    activeField: ActiveField,
+    searchQuery: String,
     isSearching: Boolean,
-    onQueryChanged: (String) -> Unit,
+    isFromCurrentLocation: Boolean,
+    onActiveFieldChanged: (ActiveField) -> Unit,
+    onSearchQueryChanged: (String) -> Unit,
+    onSwap: () -> Unit,
+    onClearFrom: () -> Unit,
+    onClearTo: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val shape = RoundedCornerShape(14.dp)
-    TextField(
-        value = query,
-        onValueChange = onQueryChanged,
+    val activeBorderColor = CurveCuePrimary.copy(alpha = 0.6f)
+
+    Card(
         modifier = modifier
-            .height(56.dp)
             .border(
                 width = 1.5.dp,
-                color = CurveCuePrimary.copy(alpha = 0.5f),
+                color = activeBorderColor,
                 shape = shape
-            )
-            .clip(shape),
-        placeholder = {
-            Text(
-                text = "Search destination...",
-                color = Color.White.copy(alpha = 0.6f)
-            )
-        },
-        leadingIcon = {
-            Icon(
-                imageVector = Icons.Default.Search,
-                contentDescription = null,
-                tint = CurveCuePrimary
-            )
-        },
-        trailingIcon = {
-            if (isSearching) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp),
-                    color = CurveCuePrimary,
-                    strokeWidth = 2.dp
+            ),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF2E2822)),
+        shape = shape
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(IntrinsicSize.Min),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Left: route indicators (dots + dotted line)
+            Column(
+                modifier = Modifier
+                    .padding(start = 14.dp)
+                    .fillMaxHeight(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                // FROM dot (green)
+                Box(
+                    modifier = Modifier
+                        .size(10.dp)
+                        .background(FromIndicatorColor, CircleShape)
                 )
-            } else if (query.isNotEmpty()) {
-                IconButton(onClick = { onQueryChanged("") }) {
+                // Dotted line connecting dots
+                val dottedLineColor = Color.White.copy(alpha = 0.3f)
+                Box(
+                    modifier = Modifier
+                        .width(2.dp)
+                        .height(32.dp)
+                        .drawBehind {
+                            drawLine(
+                                color = dottedLineColor,
+                                start = Offset(size.width / 2, 0f),
+                                end = Offset(size.width / 2, size.height),
+                                strokeWidth = 2.dp.toPx(),
+                                pathEffect = PathEffect.dashPathEffect(
+                                    floatArrayOf(4.dp.toPx(), 4.dp.toPx())
+                                )
+                            )
+                        }
+                )
+                // TO dot (amber)
+                Box(
+                    modifier = Modifier
+                        .size(10.dp)
+                        .background(ToIndicatorColor, CircleShape)
+                )
+            }
+
+            // Center: field rows
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 10.dp)
+            ) {
+                // FROM row
+                FieldRow(
+                    label = "FROM",
+                    displayName = fromDisplayName,
+                    isActive = activeField == ActiveField.FROM,
+                    searchQuery = if (activeField == ActiveField.FROM) searchQuery else "",
+                    isSearching = if (activeField == ActiveField.FROM) isSearching else false,
+                    placeholder = "Search start...",
+                    showMyLocationIcon = isFromCurrentLocation && activeField != ActiveField.FROM,
+                    onTap = { onActiveFieldChanged(ActiveField.FROM) },
+                    onQueryChanged = onSearchQueryChanged,
+                    onClear = onClearFrom
+                )
+
+                HorizontalDivider(
+                    color = Color.White.copy(alpha = 0.1f),
+                    thickness = 0.5.dp,
+                    modifier = Modifier.padding(end = 8.dp)
+                )
+
+                // TO row
+                FieldRow(
+                    label = "TO",
+                    displayName = toDisplayName,
+                    isActive = activeField == ActiveField.TO,
+                    searchQuery = if (activeField == ActiveField.TO) searchQuery else "",
+                    isSearching = if (activeField == ActiveField.TO) isSearching else false,
+                    placeholder = "Search destination...",
+                    showMyLocationIcon = false,
+                    onTap = { onActiveFieldChanged(ActiveField.TO) },
+                    onQueryChanged = onSearchQueryChanged,
+                    onClear = onClearTo
+                )
+            }
+
+            // Right: swap button
+            IconButton(
+                onClick = onSwap,
+                modifier = Modifier
+                    .padding(end = 4.dp)
+                    .size(40.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.SwapVert,
+                    contentDescription = "Swap from and to",
+                    tint = Color.White.copy(alpha = 0.6f),
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FieldRow(
+    label: String,
+    displayName: String,
+    isActive: Boolean,
+    searchQuery: String,
+    isSearching: Boolean,
+    placeholder: String,
+    showMyLocationIcon: Boolean,
+    onTap: () -> Unit,
+    onQueryChanged: (String) -> Unit,
+    onClear: () -> Unit
+) {
+    if (isActive) {
+        // Active: show editable TextField
+        TextField(
+            value = searchQuery,
+            onValueChange = onQueryChanged,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp),
+            placeholder = {
+                Text(
+                    text = placeholder,
+                    color = Color.White.copy(alpha = 0.5f),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            leadingIcon = {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White.copy(alpha = 0.4f),
+                    modifier = Modifier.width(38.dp)
+                )
+            },
+            trailingIcon = {
+                if (isSearching) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        color = CurveCuePrimary,
+                        strokeWidth = 2.dp
+                    )
+                } else if (searchQuery.isNotEmpty()) {
+                    IconButton(onClick = { onQueryChanged("") }, modifier = Modifier.size(28.dp)) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Clear search",
+                            modifier = Modifier.size(16.dp),
+                            tint = Color.White.copy(alpha = 0.5f)
+                        )
+                    }
+                }
+            },
+            singleLine = true,
+            colors = TextFieldDefaults.colors(
+                focusedContainerColor = Color(0xFF332D27),
+                unfocusedContainerColor = Color(0xFF332D27),
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White,
+                cursorColor = CurveCuePrimary,
+                focusedIndicatorColor = Color.Transparent,
+                unfocusedIndicatorColor = Color.Transparent
+            )
+        )
+    } else {
+        // Inactive: show read-only display
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+                .clickable { onTap() }
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = Color.White.copy(alpha = 0.4f),
+                modifier = Modifier.width(38.dp)
+            )
+            if (showMyLocationIcon) {
+                Icon(
+                    imageVector = Icons.Default.MyLocation,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = FromIndicatorColor.copy(alpha = 0.8f)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+            }
+            Text(
+                text = displayName.ifEmpty { placeholder },
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (displayName.isNotEmpty()) Color.White.copy(alpha = 0.85f)
+                else Color.White.copy(alpha = 0.4f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            if (displayName.isNotEmpty()) {
+                IconButton(onClick = onClear, modifier = Modifier.size(28.dp)) {
                     Icon(
                         imageVector = Icons.Default.Close,
                         contentDescription = "Clear",
-                        tint = Color.White.copy(alpha = 0.5f)
+                        modifier = Modifier.size(14.dp),
+                        tint = Color.White.copy(alpha = 0.3f)
                     )
                 }
             }
-        },
-        singleLine = true,
-        colors = TextFieldDefaults.colors(
-            focusedContainerColor = Color(0xFF332D27),
-            unfocusedContainerColor = Color(0xFF2E2822),
-            focusedTextColor = Color.White,
-            unfocusedTextColor = Color.White,
-            cursorColor = CurveCuePrimary,
-            focusedIndicatorColor = Color.Transparent,
-            unfocusedIndicatorColor = Color.Transparent
-        ),
-        shape = shape
-    )
+        }
+    }
 }
 
 // ============================================================
@@ -407,13 +631,15 @@ private fun SearchResultsList(
 }
 
 // ============================================================
-// Destination Map View (with long-press pin drop)
+// Destination Map View (with long-press pin drop, dual markers)
 // ============================================================
 
 @Composable
 private fun DestinationMapView(
-    selectedLat: Double?,
-    selectedLon: Double?,
+    fromLat: Double?,
+    fromLon: Double?,
+    toLat: Double?,
+    toLon: Double?,
     onMapLongPress: (Double, Double) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -434,7 +660,14 @@ private fun DestinationMapView(
         }
     }
 
-    val destinationMarker = remember {
+    val fromMarker = remember {
+        Marker(mapView).apply {
+            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+            title = "Start"
+        }
+    }
+
+    val toMarker = remember {
         Marker(mapView).apply {
             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
             title = "Destination"
@@ -478,22 +711,47 @@ private fun DestinationMapView(
         },
         modifier = modifier,
         update = { mv ->
-            // Update destination marker
-            mv.overlays.remove(destinationMarker)
-            if (selectedLat != null && selectedLon != null) {
-                val point = GeoPoint(selectedLat, selectedLon)
-                destinationMarker.position = point
-                mv.overlays.add(destinationMarker)
-                // Animate to selected point
-                mv.controller.animateTo(point, 14.0, 600L)
+            // Update FROM marker
+            mv.overlays.remove(fromMarker)
+            if (fromLat != null && fromLon != null) {
+                fromMarker.position = GeoPoint(fromLat, fromLon)
+                mv.overlays.add(fromMarker)
             }
+
+            // Update TO marker
+            mv.overlays.remove(toMarker)
+            if (toLat != null && toLon != null) {
+                toMarker.position = GeoPoint(toLat, toLon)
+                mv.overlays.add(toMarker)
+            }
+
+            // Zoom to fit both markers, or single marker, or do nothing
+            if (fromLat != null && fromLon != null && toLat != null && toLon != null) {
+                val north = maxOf(fromLat, toLat)
+                val south = minOf(fromLat, toLat)
+                val east = maxOf(fromLon, toLon)
+                val west = minOf(fromLon, toLon)
+                // Add padding so markers aren't at the very edge
+                val latPad = (north - south) * 0.3 + 0.01
+                val lonPad = (east - west) * 0.3 + 0.01
+                val box = BoundingBox(
+                    north + latPad, east + lonPad,
+                    south - latPad, west - lonPad
+                )
+                mv.zoomToBoundingBox(box, true)
+            } else if (toLat != null && toLon != null) {
+                mv.controller.animateTo(GeoPoint(toLat, toLon), 14.0, 600L)
+            } else if (fromLat != null && fromLon != null) {
+                mv.controller.animateTo(GeoPoint(fromLat, fromLon), 14.0, 600L)
+            }
+
             mv.invalidate()
         }
     )
 }
 
 // ============================================================
-// "Route Here" Button
+// Route Button
 // ============================================================
 
 @Composable
@@ -528,10 +786,10 @@ private fun RoutingProgressCard(message: String) {
 }
 
 @Composable
-private fun RouteHereButton(
-    destinationName: String,
-    onRouteHere: () -> Unit,
-    onDismiss: () -> Unit
+private fun RouteButton(
+    fromName: String,
+    toName: String,
+    onRoute: () -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -545,42 +803,51 @@ private fun RouteHereButton(
                 .fillMaxWidth()
                 .padding(16.dp)
         ) {
+            // FROM → TO summary
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = Icons.Default.LocationOn,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                    tint = CurveCuePrimary
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .background(FromIndicatorColor, CircleShape)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = destinationName,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                    color = Color.White,
-                    maxLines = 2,
+                    text = fromName,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.6f),
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
-                IconButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.size(28.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Dismiss",
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
-                    )
-                }
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .background(ToIndicatorColor, CircleShape)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = toName,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White.copy(alpha = 0.8f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
             }
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Route Here button with gradient border (matching HomeScreen style)
+            // Route button with gradient border (matching HomeScreen style)
             val shape = RoundedCornerShape(12.dp)
             Box(
                 modifier = Modifier
@@ -607,7 +874,7 @@ private fun RouteHereButton(
                         shape = shape
                     )
                     .clip(shape)
-                    .clickable { onRouteHere() },
+                    .clickable { onRoute() },
                 contentAlignment = Alignment.Center
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -619,7 +886,7 @@ private fun RouteHereButton(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Route Here",
+                        text = "Route",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                         color = Color.White
@@ -631,11 +898,12 @@ private fun RouteHereButton(
 }
 
 // ============================================================
-// Bottom Section: Recents + Favorites + Load GPX
+// Bottom Section: Recents + Favorites
 // ============================================================
 
 @Composable
 private fun BottomSection(
+    activeField: ActiveField,
     recentDestinations: List<DestinationViewModel.SavedDestination>,
     favoriteDestinations: List<DestinationViewModel.SavedDestination>,
     onDestinationSelected: (DestinationViewModel.SavedDestination) -> Unit,
@@ -653,6 +921,17 @@ private fun BottomSection(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
+            // Active field indicator
+            item {
+                Text(
+                    text = "Select for ${if (activeField == ActiveField.FROM) "FROM" else "TO"}",
+                    style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.sp),
+                    color = if (activeField == ActiveField.FROM) FromIndicatorColor.copy(alpha = 0.7f)
+                    else ToIndicatorColor.copy(alpha = 0.7f),
+                    modifier = Modifier.padding(bottom = 2.dp)
+                )
+            }
+
             // Favorites section
             if (favoriteDestinations.isNotEmpty()) {
                 item {
@@ -680,7 +959,6 @@ private fun BottomSection(
                     )
                 }
             }
-
         }
     }
 }
@@ -762,4 +1040,3 @@ private fun SavedDestinationItem(
         }
     }
 }
-

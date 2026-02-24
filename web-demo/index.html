@@ -1,0 +1,1277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>CurveCue — Curve Detection Demo</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+/* ─── Custom Properties ─── */
+:root {
+  --primary: #F5A623;
+  --primary-variant: #FFD180;
+  --primary-dim: #8B6914;
+  --secondary: #8D6E63;
+  --bg: #110F0D;
+  --surface: #1A1714;
+  --surface-elevated: #242018;
+  --surface-highest: #302A22;
+  --text: #D9D0C7;
+  --text-muted: #8A837C;
+  --text-bright: #FFF5E6;
+  --severity-gentle: #7CB342;
+  --severity-moderate: #FFB300;
+  --severity-firm: #F57C00;
+  --severity-sharp: #E53935;
+  --severity-hairpin: #C62828;
+  --radius: 14px;
+  --radius-sm: 8px;
+  --shadow: 0 4px 24px rgba(0,0,0,0.5);
+  --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* ─── Reset ─── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { height: 100%; width: 100%; scroll-behavior: smooth; }
+body {
+  min-height: 100%; width: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro', 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ─── Landing Page ─── */
+#landing {
+  position: relative;
+  z-index: 1;
+  background: var(--bg);
+}
+
+.landing-hero {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 24px 40px;
+  text-align: center;
+  position: relative;
+}
+.landing-hero::before {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -60%);
+  width: min(500px, 90vw); height: min(500px, 90vw);
+  background: radial-gradient(ellipse, rgba(245,166,35,0.08) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.hero-logo {
+  width: 120px; height: 120px;
+  margin-bottom: 28px;
+  position: relative;
+  animation: logo-float 4s ease-in-out infinite;
+}
+.hero-logo svg { width: 100%; height: 100%; }
+@keyframes logo-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+.hero-title {
+  font-size: clamp(36px, 8vw, 56px);
+  font-weight: 800;
+  color: var(--text-bright);
+  letter-spacing: -1px;
+  line-height: 1.1;
+  margin-bottom: 8px;
+}
+.hero-tagline {
+  font-size: clamp(11px, 2.5vw, 14px);
+  font-weight: 600;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--primary-variant);
+  margin-bottom: 20px;
+}
+.hero-desc {
+  font-size: clamp(15px, 3.5vw, 18px);
+  color: var(--text-muted);
+  max-width: 480px;
+  line-height: 1.6;
+  margin-bottom: 36px;
+}
+
+.scroll-hint {
+  position: absolute;
+  bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+  letter-spacing: 1px;
+  animation: scroll-bounce 2s ease-in-out infinite;
+}
+.scroll-hint .chevron { font-size: 18px; }
+@keyframes scroll-bounce {
+  0%, 100% { transform: translateY(0); opacity: 0.5; }
+  50% { transform: translateY(5px); opacity: 1; }
+}
+
+/* Features */
+.landing-features {
+  padding: 60px 24px 40px;
+  max-width: 800px;
+  margin: 0 auto;
+}
+.features-title {
+  font-size: clamp(22px, 5vw, 32px);
+  font-weight: 700;
+  color: var(--text-bright);
+  text-align: center;
+  margin-bottom: 40px;
+}
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 20px;
+  margin-bottom: 48px;
+}
+.feature-card {
+  background: var(--surface);
+  border: 1px solid var(--surface-highest);
+  border-radius: var(--radius);
+  padding: 24px 20px;
+  transition: all 0.3s ease;
+}
+.feature-card:hover {
+  border-color: var(--primary-dim);
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+}
+.feature-icon { font-size: 28px; margin-bottom: 12px; display: block; }
+.feature-title { font-size: 16px; font-weight: 700; color: var(--text-bright); margin-bottom: 6px; }
+.feature-desc { font-size: 13px; color: var(--text-muted); line-height: 1.5; }
+
+.severity-legend {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 48px;
+}
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); font-weight: 500; }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+.demo-transition {
+  text-align: center;
+  padding: 40px 24px 0;
+  background: var(--bg);
+}
+.demo-transition-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--primary);
+  padding: 10px 20px;
+  border: 1px solid var(--primary-dim);
+  border-radius: 20px;
+  background: rgba(245,166,35,0.06);
+}
+
+/* ─── Demo Container ─── */
+#demo {
+  position: relative;
+  height: 100vh;
+  overflow: hidden;
+  touch-action: manipulation;
+}
+/* Override fixed → absolute inside demo so stacking context works properly */
+#demo .fab-group,
+#demo .bottom-sheet-backdrop,
+#demo .bottom-sheet,
+#demo .loading-overlay,
+#demo .settings-overlay,
+#demo .info-overlay,
+#demo .toast {
+  position: absolute;
+}
+/* Top bar stays fixed to viewport but hidden until demo is in view */
+.top-bar { display: none; }
+.top-bar.visible { display: flex; }
+
+/* ─── Map ─── */
+#map {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+.leaflet-control-attribution {
+  background: rgba(26,23,20,0.85) !important;
+  color: var(--text-muted) !important;
+  font-size: 10px !important;
+  backdrop-filter: blur(4px);
+}
+.leaflet-control-attribution a { color: var(--primary) !important; }
+.leaflet-control-zoom { display: none !important; }
+
+/* ─── Top Bar ─── */
+.top-bar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 1000;
+  padding: 8px 12px;
+  padding-top: max(8px, env(safe-area-inset-top, 8px));
+  background: linear-gradient(to bottom, rgba(17,15,13,0.92) 0%, rgba(17,15,13,0.7) 80%, transparent 100%);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: none;
+}
+.top-bar > * { pointer-events: auto; }
+
+.brand-row { display: flex; align-items: center; gap: 8px; padding: 0 4px; }
+.brand-logo {
+  width: 28px; height: 28px;
+  border-radius: 7px;
+  background: #110F0D;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(245,166,35,0.3);
+  overflow: hidden;
+}
+.brand-logo svg { width: 22px; height: 22px; }
+.brand-name { font-size: 16px; font-weight: 700; letter-spacing: -0.3px; color: var(--text-bright); }
+.brand-tag {
+  font-size: 9px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
+  color: var(--primary); background: rgba(245,166,35,0.12); padding: 2px 6px; border-radius: 4px;
+}
+
+.search-row { display: flex; gap: 6px; align-items: center; }
+.search-input-wrap { flex: 1; position: relative; display: flex; align-items: center; }
+.search-input-wrap .icon {
+  position: absolute; left: 10px; font-size: 13px; color: var(--text-muted); pointer-events: none; z-index: 1;
+}
+.search-input {
+  width: 100%; height: 40px;
+  padding: 0 10px 0 30px;
+  border: 1.5px solid var(--surface-highest);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-bright);
+  font-size: 13px;
+  outline: none;
+  transition: border-color var(--transition), background var(--transition);
+}
+.search-input::placeholder { color: var(--text-muted); }
+.search-input:focus { border-color: var(--primary); background: var(--surface-elevated); }
+.search-input.active-pick { border-color: var(--primary); background: rgba(245,166,35,0.08); }
+.search-input.has-value { color: var(--text-bright); }
+
+.swap-btn {
+  width: 40px; height: 40px;
+  border: 1.5px solid var(--surface-highest);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 16px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  transition: all var(--transition);
+}
+.swap-btn:active { background: var(--surface-elevated); transform: scale(0.92); }
+
+.search-dropdown {
+  position: absolute;
+  top: 100%; left: 0; right: 0;
+  margin-top: 4px;
+  background: var(--surface-elevated);
+  border: 1px solid var(--surface-highest);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 1001;
+  display: none;
+}
+.search-dropdown.visible { display: block; }
+.search-result {
+  padding: 10px 12px; font-size: 13px; color: var(--text);
+  cursor: pointer; border-bottom: 1px solid rgba(48,42,34,0.5);
+  transition: background var(--transition);
+}
+.search-result:hover { background: var(--surface-highest); }
+.search-result:last-child { border-bottom: none; }
+
+/* Markers */
+.marker-pin {
+  width: 32px; height: 32px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+.marker-pin.from { background: var(--primary); }
+.marker-pin.to { background: var(--severity-sharp); }
+.marker-label {
+  transform: rotate(45deg);
+  font-size: 13px; font-weight: 700; color: #000;
+}
+.curve-dot {
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(0,0,0,0.3);
+  box-shadow: 0 0 8px currentColor;
+  transition: transform 0.2s;
+}
+.curve-dot:hover { transform: scale(1.3); }
+
+/* Curve popup */
+.leaflet-popup-content-wrapper {
+  background: var(--surface-elevated) !important;
+  color: var(--text-bright) !important;
+  border-radius: 10px !important;
+  box-shadow: var(--shadow) !important;
+  border: 1px solid var(--surface-highest) !important;
+}
+.leaflet-popup-content { margin: 12px 14px !important; font-size: 13px !important; line-height: 1.4 !important; }
+.leaflet-popup-tip { background: var(--surface-elevated) !important; }
+.leaflet-popup-close-button { color: var(--text-muted) !important; font-size: 18px !important; top: 6px !important; right: 8px !important; }
+.popup-severity {
+  display: inline-block; padding: 2px 7px; border-radius: 4px;
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;
+}
+.popup-narration { font-size: 13px; color: var(--text); margin-top: 4px; }
+.popup-stats { font-size: 11px; color: var(--text-muted); margin-top: 6px; display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ─── FABs ─── */
+.fab-group {
+  position: fixed;
+  z-index: 1100;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.fab-group.left { left: 14px; bottom: calc(60px + var(--safe-bottom)); }
+.fab-group.right { right: 14px; bottom: calc(60px + var(--safe-bottom)); }
+
+.fab {
+  width: 48px; height: 48px;
+  border-radius: 14px;
+  border: none;
+  cursor: pointer;
+  font-size: 20px;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: var(--shadow);
+  transition: all var(--transition);
+  -webkit-tap-highlight-color: transparent;
+}
+.fab:active { transform: scale(0.9); }
+.fab-primary { background: var(--primary); color: var(--bg); }
+.fab-primary:active { background: var(--primary-variant); }
+.fab-surface { background: var(--surface-elevated); color: var(--text); border: 1px solid var(--surface-highest); }
+.fab-surface:active { background: var(--surface-highest); }
+.fab-play { width: 56px; height: 56px; border-radius: 16px; font-size: 22px; }
+.fab-play.playing { background: var(--severity-sharp); animation: pulse-play 1.5s ease-in-out infinite; }
+@keyframes pulse-play {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(229,57,53,0.4); }
+  50% { box-shadow: 0 0 0 10px rgba(229,57,53,0); }
+}
+
+/* ─── Bottom Sheet ─── */
+.bottom-sheet-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 999;
+  opacity: 0; pointer-events: none;
+  transition: opacity var(--transition);
+}
+.bottom-sheet-backdrop.visible { opacity: 1; pointer-events: auto; }
+
+.bottom-sheet {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 1000;
+  background: var(--surface);
+  border-radius: var(--radius) var(--radius) 0 0;
+  box-shadow: 0 -4px 32px rgba(0,0,0,0.5);
+  transition: transform var(--transition);
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  transform: translateY(calc(100% - 48px));
+  padding-bottom: var(--safe-bottom);
+}
+.bottom-sheet.peek { transform: translateY(calc(100% - 130px)); }
+.bottom-sheet.open { transform: translateY(0); }
+.bottom-sheet.hidden { transform: translateY(100%); }
+
+.sheet-handle {
+  display: flex; justify-content: center;
+  padding: 10px 0 6px; cursor: grab; flex-shrink: 0;
+}
+.sheet-handle::after {
+  content: ''; width: 36px; height: 4px;
+  background: var(--surface-highest); border-radius: 2px;
+}
+
+.sheet-summary { padding: 0 16px 10px; flex-shrink: 0; }
+.sheet-summary-row { display: flex; justify-content: space-between; align-items: center; }
+.route-info { font-size: 14px; font-weight: 600; color: var(--text-bright); }
+.route-info span { color: var(--text-muted); margin: 0 6px; }
+
+.severity-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.severity-chip {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11px; font-weight: 600; color: var(--text-muted);
+  background: var(--surface-elevated); padding: 3px 8px; border-radius: 12px;
+}
+.severity-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+.sheet-content { overflow-y: auto; flex: 1; padding: 0 12px 12px; }
+
+.curve-list { display: flex; flex-direction: column; gap: 6px; }
+.curve-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px;
+  background: var(--surface-elevated);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition), max-height 0.4s ease, padding 0.4s ease, opacity 0.3s ease, margin 0.3s ease;
+  border: 1px solid transparent;
+  max-height: 80px; overflow: hidden;
+}
+.curve-item:hover { background: var(--surface-highest); }
+.curve-item.highlighted { border-color: var(--primary); background: rgba(245,166,35,0.08); }
+.curve-item.narrated {
+  max-height: 0; padding: 0 12px; margin: 0; opacity: 0;
+  border: none; overflow: hidden; pointer-events: none;
+  transition: max-height 0.4s ease, padding 0.4s ease, opacity 0.3s ease, margin 0.3s ease;
+}
+
+.curve-number {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; color: #000; flex-shrink: 0;
+}
+.curve-info { flex: 1; min-width: 0; }
+.curve-title { font-size: 13px; font-weight: 600; color: var(--text-bright); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.curve-subtitle { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+.curve-play-btn {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--surface-highest);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  transition: all var(--transition);
+}
+.curve-play-btn:hover { color: var(--primary); border-color: var(--primary); }
+
+.empty-state { text-align: center; padding: 30px 20px; }
+.empty-state .icon { font-size: 32px; margin-bottom: 10px; }
+.empty-state .title { font-size: 15px; font-weight: 600; color: var(--text-bright); margin-bottom: 4px; }
+.empty-state .subtitle { font-size: 12px; color: var(--text-muted); }
+
+/* ─── Loading ─── */
+.loading-overlay {
+  position: fixed; inset: 0;
+  z-index: 2000;
+  background: rgba(17,15,13,0.7);
+  display: flex; align-items: center; justify-content: center;
+  flex-direction: column; gap: 12px;
+  opacity: 0; pointer-events: none;
+  transition: opacity var(--transition);
+  backdrop-filter: blur(4px);
+}
+.loading-overlay.visible { opacity: 1; pointer-events: auto; }
+.spinner {
+  width: 40px; height: 40px;
+  border: 3px solid var(--surface-highest);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-text { font-size: 13px; color: var(--text-muted); font-weight: 500; }
+
+/* ─── Settings ─── */
+.settings-overlay {
+  position: fixed; inset: 0;
+  z-index: 2000;
+  background: rgba(0,0,0,0.5);
+  display: flex; align-items: flex-end; justify-content: center;
+  opacity: 0; pointer-events: none;
+  transition: opacity var(--transition);
+  backdrop-filter: blur(4px);
+}
+.settings-overlay.visible { opacity: 1; pointer-events: auto; }
+
+.settings-panel {
+  width: 100%; max-width: 420px;
+  background: var(--surface);
+  border-radius: var(--radius) var(--radius) 0 0;
+  padding: 20px 20px calc(20px + var(--safe-bottom));
+  transform: translateY(100%);
+  transition: transform var(--transition);
+  box-shadow: 0 -8px 32px rgba(0,0,0,0.5);
+}
+.settings-overlay.visible .settings-panel { transform: translateY(0); }
+
+.settings-title { font-size: 18px; font-weight: 700; color: var(--text-bright); margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
+.settings-close { background: none; border: none; color: var(--text-muted); font-size: 20px; cursor: pointer; padding: 4px; }
+.setting-group { margin-bottom: 18px; }
+.setting-label { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
+.setting-description { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+
+.toggle-group { display: flex; gap: 6px; }
+.toggle-btn {
+  flex: 1; padding: 8px 12px;
+  border: 1.5px solid var(--surface-highest);
+  border-radius: var(--radius-sm);
+  background: var(--surface-elevated);
+  color: var(--text-muted);
+  font-size: 13px; font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.toggle-btn.active { border-color: var(--primary); color: var(--primary); background: rgba(245,166,35,0.1); }
+
+/* ─── Info Modal ─── */
+.info-overlay {
+  position: fixed; inset: 0;
+  z-index: 2500;
+  background: rgba(0,0,0,0.5);
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none;
+  transition: opacity var(--transition);
+}
+.info-overlay.visible { opacity: 1; pointer-events: auto; }
+.info-modal {
+  background: var(--surface); border-radius: var(--radius);
+  padding: 24px; max-width: 340px; width: calc(100% - 40px);
+  box-shadow: var(--shadow);
+  transform: scale(0.9); transition: transform var(--transition);
+}
+.info-overlay.visible .info-modal { transform: scale(1); }
+.info-modal h2 { font-size: 18px; color: var(--text-bright); margin-bottom: 16px; }
+.step { display: flex; gap: 12px; margin-bottom: 12px; }
+.step-num {
+  width: 24px; height: 24px; border-radius: 50%;
+  background: var(--primary); color: var(--bg);
+  font-size: 13px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.step-text { font-size: 13px; color: var(--text-muted); line-height: 1.4; }
+.dismiss-btn {
+  width: 100%; margin-top: 16px; padding: 12px;
+  border: none; border-radius: var(--radius-sm);
+  background: var(--primary); color: var(--bg);
+  font-size: 14px; font-weight: 700; cursor: pointer;
+}
+
+/* ─── Toast ─── */
+.toast {
+  position: fixed;
+  bottom: calc(80px + var(--safe-bottom));
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: var(--surface-elevated);
+  color: var(--text-bright);
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-size: 13px; font-weight: 500;
+  box-shadow: var(--shadow);
+  z-index: 3000;
+  opacity: 0; pointer-events: none;
+  transition: all var(--transition);
+  white-space: nowrap;
+  border: 1px solid var(--surface-highest);
+}
+.toast.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ─── Responsive ─── */
+@media (min-width: 600px) {
+  .top-bar { padding: 12px 16px; }
+  .search-input { height: 44px; font-size: 14px; }
+  .swap-btn { width: 44px; height: 44px; }
+  .bottom-sheet { max-width: 420px; left: 50%; transform: translateX(-50%) translateY(calc(100% - 48px)); margin: 0; border-radius: var(--radius); }
+  .bottom-sheet.peek { transform: translateX(-50%) translateY(calc(100% - 130px)); }
+  .bottom-sheet.open { transform: translateX(-50%) translateY(0); bottom: 12px; }
+  .bottom-sheet.hidden { transform: translateX(-50%) translateY(calc(100% + 20px)); }
+  .settings-panel { border-radius: var(--radius); margin-bottom: 12px; }
+}
+
+.sheet-content::-webkit-scrollbar { width: 4px; }
+.sheet-content::-webkit-scrollbar-track { background: transparent; }
+.sheet-content::-webkit-scrollbar-thumb { background: var(--surface-highest); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<!-- Landing Page -->
+<div id="landing">
+  <section class="landing-hero">
+    <div class="hero-logo">
+      <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+        <path d="M50 8 C85 25, 85 38, 50 50 C15 62, 15 75, 50 92" fill="none" stroke="#F5A623" stroke-width="22" stroke-linecap="round" stroke-linejoin="round" opacity="0.15"/>
+        <path d="M50 8 C85 25, 85 38, 50 50 C15 62, 15 75, 50 92" fill="none" stroke="#F5A623" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" opacity="0.25"/>
+        <path d="M50 8 C85 25, 85 38, 50 50 C15 62, 15 75, 50 92" fill="none" stroke="#1A140A" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M45 8 C79.3 24, 79.7 37, 45 50 C10.3 63, 9.7 76, 45 92" fill="none" stroke="url(#heroGrad)" stroke-width="2" stroke-linecap="round"/>
+        <path d="M55 8 C90.7 24, 90.3 37, 55 50 C19.7 63, 20.3 76, 55 92" fill="none" stroke="url(#heroGrad)" stroke-width="2" stroke-linecap="round"/>
+        <path d="M50 8 C85 25, 85 38, 50 50 C15 62, 15 75, 50 92" fill="none" stroke="#F5A623" stroke-width="1.2" stroke-linecap="round" stroke-dasharray="4 5" opacity="0.5"/>
+        <defs><linearGradient id="heroGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#FFD180" stop-opacity="0.7"/><stop offset="50%" stop-color="#F5A623"/><stop offset="100%" stop-color="#FFD180" stop-opacity="0.7"/></linearGradient></defs>
+      </svg>
+    </div>
+    <h1 class="hero-title">CurveCue</h1>
+    <p class="hero-tagline">Your Digital Co-Driver</p>
+    <p class="hero-desc">A real-time curve detection engine that reads the road ahead, narrating curves, severity, and speed advisories before you reach them.</p>
+    <div class="scroll-hint"><span>SCROLL TO EXPLORE</span><span class="chevron">&darr;</span></div>
+  </section>
+
+  <section class="landing-features">
+    <h2 class="features-title">How It Works</h2>
+    <div class="features-grid">
+      <div class="feature-card"><span class="feature-icon">&#x1F6E3;</span><div class="feature-title">Curve Detection</div><div class="feature-desc">Menger curvature analysis on route geometry detects every curve with sub-meter precision.</div></div>
+      <div class="feature-card"><span class="feature-icon">&#x26A0;</span><div class="feature-title">5 Severity Levels</div><div class="feature-desc">Gentle, Moderate, Firm, Sharp, or Hairpin — classified by minimum radius thresholds.</div></div>
+      <div class="feature-card"><span class="feature-icon">&#x1F3CE;</span><div class="feature-title">Speed Advisory</div><div class="feature-desc">Physics-based safe speeds from curve radius and lateral g-force limits.</div></div>
+      <div class="feature-card"><span class="feature-icon">&#x1F50A;</span><div class="feature-title">Voice Narration</div><div class="feature-desc">"Sharp left ahead, tightening, slow to 35" — delivered as speech before each curve.</div></div>
+      <div class="feature-card"><span class="feature-icon">&#x1F3CD;</span><div class="feature-title">Motorcycle Mode</div><div class="feature-desc">Conservative lateral G and lean angle calculations for motorcycle riders.</div></div>
+      <div class="feature-card"><span class="feature-icon">&#x27BF;</span><div class="feature-title">Compound Patterns</div><div class="feature-desc">Detects S-bends, chicanes, and series of linked curves.</div></div>
+    </div>
+    <div class="severity-legend">
+      <div class="legend-item"><span class="legend-dot" style="background:#7CB342"></span> Gentle (&gt;200m)</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#FFB300"></span> Moderate (100-200m)</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#F57C00"></span> Firm (50-100m)</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#E53935"></span> Sharp (25-50m)</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#C62828"></span> Hairpin (&lt;25m)</div>
+    </div>
+  </section>
+
+  <div class="demo-transition"><span class="demo-transition-label">&#x25BC; Interactive Demo</span></div>
+</div>
+
+<!-- ═══════════ DEMO SECTION ═══════════ -->
+<div id="demo">
+
+<div id="map"></div>
+
+<div class="loading-overlay" id="loading">
+  <div class="spinner"></div>
+  <div class="loading-text" id="loadingText">Fetching route...</div>
+</div>
+
+<div class="top-bar">
+  <div class="brand-row">
+    <div class="brand-logo"><svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+      <path d="M50 8 C85 25, 85 38, 50 50 C15 62, 15 75, 50 92" fill="none" stroke="#F5A623" stroke-width="22" stroke-linecap="round" stroke-linejoin="round" opacity="0.2"/>
+      <path d="M50 8 C85 25, 85 38, 50 50 C15 62, 15 75, 50 92" fill="none" stroke="#F5A623" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" opacity="0.3"/>
+      <path d="M50 8 C85 25, 85 38, 50 50 C15 62, 15 75, 50 92" fill="none" stroke="#1A140A" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M45 8 C79.3 24, 79.7 37, 45 50 C10.3 63, 9.7 76, 45 92" fill="none" stroke="url(#logoGrad)" stroke-width="1.5" stroke-linecap="round"/>
+      <path d="M55 8 C90.7 24, 90.3 37, 55 50 C19.7 63, 20.3 76, 55 92" fill="none" stroke="url(#logoGrad)" stroke-width="1.5" stroke-linecap="round"/>
+      <path d="M50 8 C85 25, 85 38, 50 50 C15 62, 15 75, 50 92" fill="none" stroke="#F5A623" stroke-width="1" stroke-linecap="round" stroke-dasharray="4 5" opacity="0.5"/>
+      <defs><linearGradient id="logoGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#FFD180" stop-opacity="0.7"/><stop offset="50%" stop-color="#F5A623"/><stop offset="100%" stop-color="#FFD180" stop-opacity="0.7"/></linearGradient></defs>
+    </svg></div>
+    <div class="brand-name">CurveCue</div>
+    <div class="brand-tag">Demo</div>
+  </div>
+  <div class="search-row">
+    <div class="search-input-wrap" id="fromWrap">
+      <span class="icon">&#x25CF;</span>
+      <input type="text" class="search-input" id="fromInput" placeholder="From — tap map or search" autocomplete="off">
+      <div class="search-dropdown" id="fromDropdown"></div>
+    </div>
+    <button class="swap-btn" id="swapBtn" title="Swap origin and destination">&#x21C5;</button>
+    <div class="search-input-wrap" id="toWrap">
+      <span class="icon" style="color:var(--severity-sharp)">&#x25CF;</span>
+      <input type="text" class="search-input" id="toInput" placeholder="To — tap map or search" autocomplete="off">
+      <div class="search-dropdown" id="toDropdown"></div>
+    </div>
+  </div>
+</div>
+
+<!-- FABs Left -->
+<div class="fab-group left">
+  <button class="fab fab-surface" id="zoomInBtn" title="Zoom in">+</button>
+  <button class="fab fab-surface" id="zoomOutBtn" title="Zoom out">&minus;</button>
+  <button class="fab fab-surface" id="locateBtn" title="My location">&#x1F4CD;</button>
+  <button class="fab fab-surface" id="infoBtn" title="How to use">?</button>
+</div>
+
+<!-- FABs Right -->
+<div class="fab-group right">
+  <button class="fab fab-primary fab-play" id="playBtn" title="Play narrations" style="display:none">&#x25B6;</button>
+  <button class="fab fab-surface" id="settingsBtn" title="Settings">&#x2699;</button>
+</div>
+
+<!-- Bottom Sheet -->
+<div class="bottom-sheet-backdrop" id="sheetBackdrop"></div>
+<div class="bottom-sheet hidden" id="bottomSheet">
+  <div class="sheet-handle" id="sheetHandle"></div>
+  <div class="sheet-summary" id="sheetSummary">
+    <div class="sheet-summary-row">
+      <div class="route-info" id="routeInfo">No route</div>
+    </div>
+    <div class="severity-chips" id="severityChips"></div>
+  </div>
+  <div class="sheet-content" id="sheetContent">
+    <div class="curve-list" id="curveList">
+      <div class="empty-state">
+        <div class="icon">&#x1F6E3;</div>
+        <div class="title">No curves detected</div>
+        <div class="subtitle">Set a start and end point to analyze a route</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Settings Overlay -->
+<div class="settings-overlay" id="settingsOverlay">
+  <div class="settings-panel">
+    <div class="settings-title">
+      Settings
+      <button class="settings-close" id="settingsClose">&#x2715;</button>
+    </div>
+    <div class="setting-group">
+      <div class="setting-label">Vehicle Mode</div>
+      <div class="toggle-group">
+        <button class="toggle-btn" data-mode="car" id="modeCarBtn">&#x1F697; Car</button>
+        <button class="toggle-btn" data-mode="motorcycle" id="modeMotoBtn">&#x1F3CD; Motorcycle</button>
+      </div>
+      <div class="setting-description">Motorcycle mode uses conservative lateral G (0.25) and shows lean angles</div>
+    </div>
+    <div class="setting-group">
+      <div class="setting-label">Narration Verbosity</div>
+      <div class="toggle-group">
+        <button class="toggle-btn" data-verbosity="minimal" id="verbMinBtn">Minimal</button>
+        <button class="toggle-btn" data-verbosity="standard" id="verbStdBtn">Standard</button>
+        <button class="toggle-btn" data-verbosity="detailed" id="verbDetBtn">Detailed</button>
+      </div>
+      <div class="setting-description">Controls how much detail each curve narration includes</div>
+    </div>
+    <div class="setting-group">
+      <div class="setting-label">Speech Rate</div>
+      <div class="toggle-group">
+        <button class="toggle-btn" data-rate="slow">Slow</button>
+        <button class="toggle-btn" data-rate="normal">Normal</button>
+        <button class="toggle-btn" data-rate="fast">Fast</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Info Modal -->
+<div class="info-overlay" id="infoOverlay">
+  <div class="info-modal">
+    <h2>&#x1F6E3; How to Use</h2>
+    <div class="step"><div class="step-num">1</div><div class="step-text">Tap <strong>From</strong> field, then tap the map to set your start point (or type to search)</div></div>
+    <div class="step"><div class="step-num">2</div><div class="step-text">Tap <strong>To</strong> field, then tap the map to set your destination</div></div>
+    <div class="step"><div class="step-num">3</div><div class="step-text">The route is analyzed automatically — curves appear color-coded on the map</div></div>
+    <div class="step"><div class="step-num">4</div><div class="step-text">Tap curves in the list to zoom in. Press <strong>&#x25B6;</strong> to hear all narrations.</div></div>
+    <button class="dismiss-btn" id="infoDismiss">Got it</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+</div><!-- end #demo -->
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script type="module">
+import { analyzeRoute } from './engine.js';
+
+// ─── State ───
+const state = {
+  from: null, to: null, pickMode: null,
+  curves: [], routeGeoJson: null, routeDistance: 0, isPlaying: false,
+  settings: { mode: 'car', verbosity: 'standard', rate: 'normal' },
+};
+
+const SEVERITY = {
+  GENTLE:   { color: '#7CB342', label: 'Gentle' },
+  MODERATE: { color: '#FFB300', label: 'Moderate' },
+  FIRM:     { color: '#F57C00', label: 'Firm' },
+  SHARP:    { color: '#E53935', label: 'Sharp' },
+  HAIRPIN:  { color: '#C62828', label: 'Hairpin' },
+};
+
+// ─── Settings persistence ───
+function loadSettings() { try { const s = localStorage.getItem('curvecue-settings'); if (s) Object.assign(state.settings, JSON.parse(s)); } catch(e) {} }
+function saveSettings() { try { localStorage.setItem('curvecue-settings', JSON.stringify(state.settings)); } catch(e) {} }
+loadSettings();
+
+// ─── DOM refs ───
+const $fromInput = document.getElementById('fromInput');
+const $toInput = document.getElementById('toInput');
+const $fromDropdown = document.getElementById('fromDropdown');
+const $toDropdown = document.getElementById('toDropdown');
+const $playBtn = document.getElementById('playBtn');
+const $bottomSheet = document.getElementById('bottomSheet');
+const $sheetBackdrop = document.getElementById('sheetBackdrop');
+const $sheetHandle = document.getElementById('sheetHandle');
+const $sheetSummary = document.getElementById('sheetSummary');
+const $routeInfo = document.getElementById('routeInfo');
+const $severityChips = document.getElementById('severityChips');
+const $curveList = document.getElementById('curveList');
+const $settingsOverlay = document.getElementById('settingsOverlay');
+const $infoOverlay = document.getElementById('infoOverlay');
+const $loading = document.getElementById('loading');
+const $loadingText = document.getElementById('loadingText');
+const $toast = document.getElementById('toast');
+
+// ─── Map ───
+const map = L.map('map', {
+  zoomControl: false,
+  scrollWheelZoom: false,
+  attributionControl: true,
+}).setView([37.342, -121.68], 13);
+
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
+  subdomains: 'abcd', maxZoom: 19,
+}).addTo(map);
+
+// ─── Map layers ───
+let routeLayer = null;
+let curveSegmentLayers = [];
+let curveMarkers = [];
+let fromMarker = null;
+let toMarker = null;
+
+function createPinIcon(type) {
+  return L.divIcon({
+    className: 'custom-marker',
+    html: `<div class="marker-pin ${type}"><span class="marker-label">${type === 'from' ? 'A' : 'B'}</span></div>`,
+    iconSize: [32, 42], iconAnchor: [16, 42], popupAnchor: [0, -42],
+  });
+}
+function createCurveIcon(severity) {
+  const color = SEVERITY[severity]?.color || '#888';
+  return L.divIcon({
+    className: 'curve-marker-icon',
+    html: `<div class="curve-dot" style="background:${color}"></div>`,
+    iconSize: [14, 14], iconAnchor: [7, 7],
+  });
+}
+
+function updateFromMarker() {
+  if (fromMarker) { map.removeLayer(fromMarker); fromMarker = null; }
+  if (state.from) fromMarker = L.marker([state.from.lat, state.from.lon], { icon: createPinIcon('from') }).addTo(map);
+}
+function updateToMarker() {
+  if (toMarker) { map.removeLayer(toMarker); toMarker = null; }
+  if (state.to) toMarker = L.marker([state.to.lat, state.to.lon], { icon: createPinIcon('to') }).addTo(map);
+}
+
+// ─── Helpers ───
+function showLoading(msg) { $loadingText.textContent = msg; $loading.classList.add('visible'); }
+function hideLoading() { $loading.classList.remove('visible'); }
+let toastTimer;
+function showToast(msg) { $toast.textContent = msg; $toast.classList.add('visible'); clearTimeout(toastTimer); toastTimer = setTimeout(() => $toast.classList.remove('visible'), 3000); }
+
+// ─── Search (Nominatim) ───
+let searchTimer = null;
+function setupSearch(input, dropdown, field) {
+  input.addEventListener('focus', () => {
+    state.pickMode = field;
+    input.classList.add('active-pick');
+    (field === 'from' ? $toInput : $fromInput).classList.remove('active-pick');
+  });
+  input.addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    const q = input.value.trim();
+    if (q.length < 3) { dropdown.classList.remove('visible'); return; }
+    searchTimer = setTimeout(async () => {
+      try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=5`);
+        const results = await res.json();
+        if (results.length === 0) { dropdown.classList.remove('visible'); return; }
+        dropdown.innerHTML = results.map(r => `<div class="search-result" data-lat="${r.lat}" data-lon="${r.lon}" data-name="${r.display_name.split(',').slice(0,2).join(',')}">${r.display_name.split(',').slice(0,3).join(',')}</div>`).join('');
+        dropdown.classList.add('visible');
+        dropdown.querySelectorAll('.search-result').forEach(el => {
+          el.addEventListener('click', () => {
+            const pt = { lat: parseFloat(el.dataset.lat), lon: parseFloat(el.dataset.lon), name: el.dataset.name };
+            if (field === 'from') { state.from = pt; input.value = pt.name; updateFromMarker(); }
+            else { state.to = pt; input.value = pt.name; updateToMarker(); }
+            input.classList.add('has-value');
+            dropdown.classList.remove('visible');
+            if (state.from && state.to) fetchAndAnalyzeRoute();
+          });
+        });
+      } catch(e) {}
+    }, 400);
+  });
+}
+setupSearch($fromInput, $fromDropdown, 'from');
+setupSearch($toInput, $toDropdown, 'to');
+
+// Close dropdowns on outside click
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#fromWrap')) $fromDropdown.classList.remove('visible');
+  if (!e.target.closest('#toWrap')) $toDropdown.classList.remove('visible');
+});
+
+// ─── Map click to set point ───
+map.on('click', (e) => {
+  if (!state.pickMode) {
+    state.pickMode = state.from ? 'to' : 'from';
+  }
+  const pt = { lat: e.latlng.lat, lon: e.latlng.lng, name: `${e.latlng.lat.toFixed(4)}, ${e.latlng.lng.toFixed(4)}` };
+  if (state.pickMode === 'from') {
+    state.from = pt;
+    $fromInput.value = pt.name; $fromInput.classList.add('has-value');
+    updateFromMarker();
+    state.pickMode = 'to';
+    $toInput.classList.add('active-pick'); $fromInput.classList.remove('active-pick');
+  } else {
+    state.to = pt;
+    $toInput.value = pt.name; $toInput.classList.add('has-value');
+    updateToMarker();
+    state.pickMode = null;
+    $fromInput.classList.remove('active-pick'); $toInput.classList.remove('active-pick');
+  }
+  if (state.from && state.to) fetchAndAnalyzeRoute();
+});
+
+// Swap
+document.getElementById('swapBtn').addEventListener('click', () => {
+  const tmp = state.from; state.from = state.to; state.to = tmp;
+  $fromInput.value = state.from?.name || ''; $toInput.value = state.to?.name || '';
+  $fromInput.classList.toggle('has-value', !!state.from); $toInput.classList.toggle('has-value', !!state.to);
+  updateFromMarker(); updateToMarker();
+  if (state.from && state.to) fetchAndAnalyzeRoute();
+});
+
+// ─── Routing + Analysis ───
+async function fetchAndAnalyzeRoute() {
+  if (!state.from || !state.to) return;
+  showLoading('Fetching route...');
+  clearRouteDisplay();
+  try {
+    const url = `https://router.project-osrm.org/route/v1/driving/${state.from.lon},${state.from.lat};${state.to.lon},${state.to.lat}?overview=full&geometries=geojson`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (!data.routes || data.routes.length === 0) { hideLoading(); showToast('No route found'); return; }
+
+    const route = data.routes[0];
+    state.routeGeoJson = route.geometry;
+    state.routeDistance = route.distance;
+
+    routeLayer = L.geoJSON(route.geometry, { style: { color: '#555', weight: 4, opacity: 0.5 } }).addTo(map);
+    map.fitBounds(routeLayer.getBounds().pad(0.1));
+
+    const coords = route.geometry.coordinates;
+    const points = coords.map(c => ({ lat: c[1], lon: c[0] }));
+
+    $loadingText.textContent = 'Analyzing curves...';
+    const lateralG = state.settings.mode === 'motorcycle' ? 0.25 : 0.35;
+    const result = analyzeRoute(points, { lateralG });
+    state.curves = result.curves || [];
+
+    renderCurveSegments(coords);
+    renderCurveMarkers();
+    renderBottomSheet();
+    hideLoading();
+    setSheetState('peek');
+    $playBtn.style.display = state.curves.length > 0 ? 'flex' : 'none';
+  } catch(err) {
+    hideLoading();
+    showToast('Error: ' + err.message);
+    console.error(err);
+  }
+}
+
+function clearRouteDisplay() {
+  if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
+  curveSegmentLayers.forEach(l => map.removeLayer(l));
+  curveSegmentLayers = [];
+  curveMarkers.forEach(m => map.removeLayer(m));
+  curveMarkers = [];
+  state.curves = [];
+  $playBtn.style.display = 'none';
+}
+
+function resetDemo() {
+  speechSynthesis.cancel();
+  state.isPlaying = false;
+  $playBtn.classList.remove('playing');
+  $playBtn.textContent = '\u25B6';
+  clearRouteDisplay();
+  if (fromMarker) { map.removeLayer(fromMarker); fromMarker = null; }
+  if (toMarker) { map.removeLayer(toMarker); toMarker = null; }
+  state.from = null;
+  state.to = null;
+  state.routeGeoJson = null;
+  state.routeDistance = 0;
+  $fromInput.value = '';
+  $toInput.value = '';
+  $fromInput.classList.remove('has-value', 'active-pick');
+  $toInput.classList.remove('has-value', 'active-pick');
+  state.pickMode = null;
+  setSheetState('hidden');
+  $routeInfo.innerHTML = 'No route';
+  $severityChips.innerHTML = '';
+  $curveList.innerHTML = '<div class="empty-state"><div class="icon">&#x1F6E3;</div><div class="title">No curves detected</div><div class="subtitle">Set a start and end point to analyze a route</div></div>';
+  map.setView([37.342, -121.68], 13);
+}
+
+function renderCurveSegments(coords) {
+  state.curves.forEach(curve => {
+    if (!curve.startPoint || !curve.endPoint) return;
+    const color = SEVERITY[curve.severity]?.color || '#888';
+    const startIdx = findClosestCoordIndex(coords, curve.startPoint);
+    const endIdx = findClosestCoordIndex(coords, curve.endPoint);
+    if (startIdx === endIdx) return;
+    const min = Math.min(startIdx, endIdx);
+    const max = Math.max(startIdx, endIdx);
+    const segCoords = coords.slice(min, max + 1).map(c => [c[1], c[0]]);
+    if (segCoords.length < 2) return;
+    const layer = L.polyline(segCoords, { color, weight: 6, opacity: 0.85, lineCap: 'round', lineJoin: 'round' }).addTo(map);
+    curveSegmentLayers.push(layer);
+  });
+}
+
+function findClosestCoordIndex(coords, point) {
+  let minDist = Infinity, idx = 0;
+  for (let i = 0; i < coords.length; i++) {
+    const d = (coords[i][1] - point.lat) ** 2 + (coords[i][0] - point.lon) ** 2;
+    if (d < minDist) { minDist = d; idx = i; }
+  }
+  return idx;
+}
+
+function renderCurveMarkers() {
+  state.curves.forEach((curve, i) => {
+    const pt = curve.startPoint || curve.endPoint;
+    if (!pt) return;
+    const sev = SEVERITY[curve.severity] || SEVERITY.GENTLE;
+    const popupHtml = `<div class="popup-severity" style="background:${sev.color};color:#000">${sev.label}</div><div class="popup-narration">${curve.narration || ''}</div><div class="popup-stats">${curve.arcLength ? `<span class="popup-stat">&#x1F4CF; ${Math.round(curve.arcLength)}m</span>` : ''}${curve.advisorySpeedKmh ? `<span class="popup-stat">&#x26A1; ${Math.round(curve.advisorySpeedKmh)} km/h</span>` : ''}${curve.minRadius ? `<span class="popup-stat">&#x1F504; R${Math.round(curve.minRadius)}m</span>` : ''}</div>`;
+    const marker = L.marker([pt.lat, pt.lon], { icon: createCurveIcon(curve.severity) }).bindPopup(popupHtml, { maxWidth: 260 }).addTo(map);
+    curveMarkers.push(marker);
+  });
+}
+
+// ─── Bottom Sheet ───
+function renderBottomSheet() {
+  const km = (state.routeDistance / 1000).toFixed(1);
+  $routeInfo.innerHTML = `Route: ${km} km <span>|</span> Curves: ${state.curves.length}`;
+  const counts = {};
+  state.curves.forEach(c => { counts[c.severity] = (counts[c.severity] || 0) + 1; });
+  $severityChips.innerHTML = Object.entries(SEVERITY).filter(([k]) => counts[k]).map(([k, v]) => `<div class="severity-chip"><span class="severity-dot" style="background:${v.color}"></span>${counts[k]} ${v.label}</div>`).join('');
+
+  if (state.curves.length === 0) {
+    $curveList.innerHTML = '<div class="empty-state"><div class="icon">&#x2705;</div><div class="title">No significant curves</div><div class="subtitle">This route is relatively straight</div></div>';
+    return;
+  }
+  $curveList.innerHTML = state.curves.map((curve, i) => {
+    const sev = SEVERITY[curve.severity] || SEVERITY.GENTLE;
+    const narration = curve.narration || `${curve.direction} ${sev.label.toLowerCase()} curve`;
+    const subtitle = [
+      curve.advisorySpeedKmh ? `${Math.round(curve.advisorySpeedKmh)} km/h` : '',
+      curve.arcLength ? `${Math.round(curve.arcLength)}m` : '',
+    ].filter(Boolean).join(' \u00B7 ');
+    return `<div class="curve-item" data-index="${i}"><div class="curve-number" style="background:${sev.color}">${i + 1}</div><div class="curve-info"><div class="curve-title">${narration}</div>${subtitle ? `<div class="curve-subtitle">${subtitle}</div>` : ''}</div><button class="curve-play-btn" data-play="${i}" title="Play narration">&#x25B6;</button></div>`;
+  }).join('');
+
+  $curveList.querySelectorAll('.curve-item').forEach(el => {
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('.curve-play-btn')) return;
+      zoomToCurve(parseInt(el.dataset.index));
+    });
+  });
+  $curveList.querySelectorAll('.curve-play-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => { e.stopPropagation(); speakCurve(parseInt(btn.dataset.play)); });
+  });
+}
+
+function zoomToCurve(index, isPlayback = false) {
+  const curve = state.curves[index]; if (!curve) return;
+  const pt = curve.startPoint || curve.endPoint; if (!pt) return;
+  map.flyTo([pt.lat, pt.lon], 16, { duration: 0.5 });
+  // Close all popups, open current
+  curveMarkers.forEach(m => m.closePopup());
+  if (curveMarkers[index]) curveMarkers[index].openPopup();
+  // Update list: highlight current, dim past during playback
+  $curveList.querySelectorAll('.curve-item').forEach(el => {
+    const i = parseInt(el.dataset.index);
+    el.classList.remove('highlighted', 'narrated');
+    if (isPlayback && i < index) el.classList.add('narrated');
+  });
+  const item = $curveList.querySelector(`[data-index="${index}"]`);
+  if (item) { item.classList.add('highlighted'); item.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+}
+
+// ─── Bottom Sheet States ───
+let sheetState = 'hidden';
+function setSheetState(s) {
+  sheetState = s;
+  $bottomSheet.className = 'bottom-sheet ' + s;
+  $sheetBackdrop.classList.toggle('visible', s === 'open');
+}
+$sheetSummary.addEventListener('click', () => {
+  if (sheetState === 'peek') setSheetState('open');
+  else if (sheetState === 'open') setSheetState('peek');
+});
+$sheetHandle.addEventListener('click', () => {
+  if (sheetState === 'peek') setSheetState('open');
+  else if (sheetState === 'open') setSheetState('peek');
+});
+$sheetBackdrop.addEventListener('click', () => setSheetState('peek'));
+
+// Touch drag for sheet
+let isDragging = false, dragStartY = 0;
+$sheetHandle.addEventListener('touchstart', (e) => { isDragging = true; dragStartY = e.touches[0].clientY; }, { passive: true });
+document.addEventListener('touchmove', (e) => {
+  if (!isDragging) return;
+  const dy = e.touches[0].clientY - dragStartY;
+  if (dy > 60 && sheetState === 'open') { setSheetState('peek'); isDragging = false; }
+  else if (dy < -60 && sheetState === 'peek') { setSheetState('open'); isDragging = false; }
+}, { passive: true });
+document.addEventListener('touchend', () => { isDragging = false; }, { passive: true });
+
+// ─── Speech ───
+function speakCurve(index) {
+  const curve = state.curves[index]; if (!curve) return;
+  speechSynthesis.cancel();
+  const utter = new SpeechSynthesisUtterance(curve.narration || '');
+  utter.rate = state.settings.rate === 'slow' ? 0.8 : state.settings.rate === 'fast' ? 1.3 : 1.0;
+  speechSynthesis.speak(utter);
+  zoomToCurve(index);
+}
+
+function clearNarratedState() {
+  $curveList.querySelectorAll('.curve-item').forEach(el => el.classList.remove('narrated', 'highlighted'));
+}
+
+async function playAllNarrations() {
+  if (state.curves.length === 0) return;
+  if (state.isPlaying) {
+    speechSynthesis.cancel();
+    state.isPlaying = false;
+    $playBtn.classList.remove('playing'); $playBtn.textContent = '\u25B6';
+    clearNarratedState();
+    resetDemo();
+    return;
+  }
+  state.isPlaying = true; $playBtn.classList.add('playing'); $playBtn.textContent = '\u25A0';
+  for (let i = 0; i < state.curves.length; i++) {
+    if (!state.isPlaying) break;
+    zoomToCurve(i, true);
+    await new Promise(resolve => {
+      const utter = new SpeechSynthesisUtterance(state.curves[i].narration || '');
+      utter.rate = state.settings.rate === 'slow' ? 0.8 : state.settings.rate === 'fast' ? 1.3 : 1.0;
+      utter.onend = resolve; utter.onerror = resolve;
+      speechSynthesis.speak(utter);
+    });
+    if (state.isPlaying && i < state.curves.length - 1) await new Promise(r => setTimeout(r, 600));
+  }
+  state.isPlaying = false; $playBtn.classList.remove('playing'); $playBtn.textContent = '\u25B6';
+  clearNarratedState();
+  resetDemo();
+}
+$playBtn.addEventListener('click', playAllNarrations);
+
+// ─── Settings ───
+function openSettings() { $settingsOverlay.classList.add('visible'); updateSettingsUI(); }
+function closeSettings() { $settingsOverlay.classList.remove('visible'); }
+document.getElementById('settingsBtn').addEventListener('click', openSettings);
+document.getElementById('settingsClose').addEventListener('click', closeSettings);
+$settingsOverlay.addEventListener('click', (e) => { if (e.target === $settingsOverlay) closeSettings(); });
+
+function updateSettingsUI() {
+  document.querySelectorAll('[data-mode]').forEach(btn => btn.classList.toggle('active', btn.dataset.mode === state.settings.mode));
+  document.querySelectorAll('[data-verbosity]').forEach(btn => btn.classList.toggle('active', btn.dataset.verbosity === state.settings.verbosity));
+  document.querySelectorAll('[data-rate]').forEach(btn => btn.classList.toggle('active', btn.dataset.rate === state.settings.rate));
+}
+document.querySelectorAll('[data-mode]').forEach(btn => {
+  btn.addEventListener('click', () => { state.settings.mode = btn.dataset.mode; saveSettings(); updateSettingsUI(); if (state.from && state.to) fetchAndAnalyzeRoute(); });
+});
+document.querySelectorAll('[data-verbosity]').forEach(btn => {
+  btn.addEventListener('click', () => { state.settings.verbosity = btn.dataset.verbosity; saveSettings(); updateSettingsUI(); });
+});
+document.querySelectorAll('[data-rate]').forEach(btn => {
+  btn.addEventListener('click', () => { state.settings.rate = btn.dataset.rate; saveSettings(); updateSettingsUI(); });
+});
+updateSettingsUI();
+
+// ─── Zoom, Locate, Info ───
+document.getElementById('zoomInBtn').addEventListener('click', () => map.zoomIn());
+document.getElementById('zoomOutBtn').addEventListener('click', () => map.zoomOut());
+document.getElementById('locateBtn').addEventListener('click', () => {
+  if (!navigator.geolocation) { showToast('Geolocation not available'); return; }
+  showToast('Getting location...');
+  navigator.geolocation.getCurrentPosition(
+    (pos) => map.flyTo([pos.coords.latitude, pos.coords.longitude], 14, { duration: 1 }),
+    () => showToast('Could not get location'),
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+});
+
+function showInfo() { $infoOverlay.classList.add('visible'); }
+function hideInfo() { $infoOverlay.classList.remove('visible'); }
+document.getElementById('infoBtn').addEventListener('click', showInfo);
+document.getElementById('infoDismiss').addEventListener('click', hideInfo);
+$infoOverlay.addEventListener('click', (e) => { if (e.target === $infoOverlay) hideInfo(); });
+
+if (!localStorage.getItem('curvecue-intro-seen')) {
+  setTimeout(showInfo, 800);
+  localStorage.setItem('curvecue-intro-seen', '1');
+}
+
+// ─── Default route: Grant Lake → Mount Hamilton ───
+async function loadDefaultRoute() {
+  state.from = { lat: 37.3425, lon: -121.7161, name: 'Grant Lake, Santa Clara' };
+  state.to = { lat: 37.3419, lon: -121.6430, name: 'Mount Hamilton, Santa Clara' };
+  $fromInput.value = state.from.name;
+  $toInput.value = state.to.name;
+  $fromInput.classList.add('has-value');
+  $toInput.classList.add('has-value');
+  updateFromMarker();
+  updateToMarker();
+  await fetchAndAnalyzeRoute();
+}
+
+// ─── Load demo when scrolled into view ───
+let demoLoaded = false;
+const $demo = document.getElementById('demo');
+const $topBar = document.querySelector('.top-bar');
+const observer = new IntersectionObserver((entries) => {
+  for (const entry of entries) {
+    if (entry.isIntersecting && !demoLoaded) {
+      demoLoaded = true;
+      map.invalidateSize();
+      loadDefaultRoute();
+      observer.disconnect();
+    }
+  }
+}, { threshold: 0.1 });
+observer.observe($demo);
+
+// ─── Show/hide top bar when demo is in view ───
+const topBarObserver = new IntersectionObserver((entries) => {
+  for (const entry of entries) {
+    $topBar.classList.toggle('visible', entry.isIntersecting);
+  }
+}, { threshold: 0.05 });
+topBarObserver.observe($demo);
+</script>
+</body>
+</html>

@@ -1,18 +1,40 @@
 # CurveCue
 
-**Your digital co-driver.** CurveCue is an Android app that narrates upcoming curves in real time as you drive or ride a route. Load a GPX file, hit start, and the app speaks turn-by-turn curve warnings through your speakers — so your eyes stay on the road.
+**Your digital co-driver.** CurveCue is a real-time curve detection engine that reads the road ahead — narrating curves, severity, and speed advisories before you reach them.
 
 Built for spirited drives on mountain roads, track days with unfamiliar layouts, and motorcycle touring through twisties.
 
 <p align="center">
-  <img src="docs/screenshot-home.png" alt="Home Screen" width="270" />
+  <a href="https://mhathiyari.github.io/curve-call/"><img src="https://img.shields.io/badge/Live_Demo-Try_It_Now-F5A623?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Live Demo" /></a>
+  <img src="https://img.shields.io/badge/Android_App-Coming_Soon-555?style=for-the-badge&logo=android&logoColor=white" alt="Android App — Coming Soon" />
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge" alt="MIT License" /></a>
 </p>
+
+---
+
+<p align="center">
+  <img src="docs/screenshot-landing.png" alt="CurveCue Landing Page" width="720" />
+</p>
+
+<p align="center">
+  <img src="docs/screenshot-demo-map.png" alt="CurveCue Route Analysis — curves color-coded by severity on an interactive map" width="720" />
+</p>
+
+<p align="center">
+  <sub>Web demo analyzing Mt Hamilton Rd — 66 curves detected and color-coded by severity</sub>
+</p>
+
+## Try It
+
+**[Live Web Demo](https://mhathiyari.github.io/curve-call/)** — pick any two points on a map, and CurveCue analyzes the route in real time. Tap curves to hear voice narrations.
+
+The Android app is coming soon to the Google Play Store.
 
 ## How It Works
 
-1. **Load a GPX route** — Export from any mapping app (Calimoto, Kurviger, Google Maps, etc.)
-2. **Select your mode** — Car or Motorcycle (motorcycle adds lean angle and surface warnings)
-3. **Drive** — CurveCue matches your GPS position to the route in real time and speaks upcoming curves before you reach them
+1. **Pick a route** — Tap start/end points on the map or search by address
+2. **Automatic analysis** — The engine interpolates the route, computes Menger curvature at every point, segments curves, classifies severity, and calculates safe speeds
+3. **Voice narration** — Each curve is announced before you reach it: direction, severity, speed advisory, and modifiers
 
 Example narrations:
 - *"Left curve ahead, moderate"*
@@ -22,30 +44,36 @@ Example narrations:
 
 ## Features
 
-- **Adaptive timing** — Narration trigger distance adjusts dynamically based on your current speed and braking physics. Faster = earlier warning.
-- **Severity classification** — Curves classified into 5 levels by radius: Gentle (>200m), Moderate (100–200m), Firm (50–100m), Sharp (25–50m), Hairpin (<25m)
-- **Compound detection** — Identifies S-bends, chicanes, and series of linked curves as a single narration
-- **Speed advisories** — Physics-based safe speed recommendations derived from road geometry and lateral G limits
-- **Motorcycle mode** — Lean angle suggestions, surface condition warnings (gravel, dirt, cobblestone via Overpass API), sportier timing profiles
-- **Road metadata** — Surface type, road name, and condition data integrated into narrations
-- **Live map** — Heading-up OpenStreetMap view with severity-colored route overlay and dynamic zoom
-- **Offline capable** — Pre-caches map tiles along your route corridor for areas with no signal
-- **Audio ducking** — Automatically lowers music volume during narrations, then restores it
-- **Configurable verbosity** — Minimal (sharp + hairpin only), Standard (moderate+), or Detailed (everything including straights)
-- **Dark theme** — Always-dark UI optimized for minimal glare while driving
+- **5 severity levels** — Gentle (>200m), Moderate (100–200m), Firm (50–100m), Sharp (25–50m), Hairpin (<25m)
+- **Compound detection** — S-bends, chicanes, and series of linked curves identified as a single narration
+- **Speed advisories** — Physics-based safe speed from curve radius and lateral G-force limits
+- **Adaptive timing** — Narration trigger distance adjusts based on current speed and braking physics
+- **Motorcycle mode** — Lean angle suggestions, surface condition warnings, sportier timing
+- **Configurable verbosity** — Terse (sharp + hairpin only), Standard (moderate+), or Descriptive (everything)
+- **Winding detection** — Detects 6+ curve clusters with overview narration
+- **Spatial audio** — Stereo pre-cue tones panned by curve direction
+- **Road metadata** — Surface type, road name, and conditions integrated into narrations
+- **Dark theme** — Always-dark UI optimized for minimal glare
+
+<p align="center">
+  <img src="docs/screenshot-home.png" alt="CurveCue Android App — Home Screen" width="270" />
+  <br />
+  <sub>Android app home screen</sub>
+</p>
 
 ## Architecture
 
-CurveCue is a multi-module Kotlin project with a clean separation between pure logic and Android platform code.
+Three pure-Kotlin modules with a clean separation between logic and platform code:
 
 ```
 curve_call/
 ├── engine/          Pure Kotlin — route analysis pipeline
 ├── narration/       Pure Kotlin — TTS text generation & timing
-└── app/             Android — UI, GPS, audio, DI
+├── app/             Android — UI, GPS, audio, DI
+└── web-demo/        Standalone HTML/JS demo (port of engine)
 ```
 
-### Engine Module
+### Engine Pipeline
 
 Transforms raw GPS coordinates into classified curve segments through an 8-stage pipeline:
 
@@ -54,8 +82,6 @@ GPX Points → Interpolation (10m spacing) → Curvature (Menger) → Segmentati
 → Classification (severity, direction, modifiers) → Speed Advisory (lateral G)
 → Lean Angle → Compound Detection (S-bends) → Data Quality (confidence)
 ```
-
-Key types: `CurveSegment`, `StraightSegment`, `Severity`, `CompoundType`, `MapMatcher`
 
 ### Narration Module
 
@@ -81,84 +107,30 @@ Three timing profiles — Relaxed (2.0s reaction), Normal (1.5s), Sporty (1.2s) 
 **Requirements:** Android Studio Hedgehog+, JDK 21, Android SDK 34
 
 ```bash
-# Clone
-git clone https://github.com/mhathiyari/curve_call.git
-cd curve_call
+git clone https://github.com/mhathiyari/curve-call.git
+cd curve-call
 
 # Build debug APK
 ./gradlew assembleDebug
-
-# Install on connected device
-./gradlew installDebug
 
 # Run engine + narration tests
 ./gradlew :engine:test :narration:test
 ```
 
-**Min SDK:** 26 (Android 8.0)
-**Target SDK:** 34 (Android 14)
-
-## Permissions
-
-| Permission | Why |
-|---|---|
-| `ACCESS_FINE_LOCATION` | GPS tracking during active session |
-| `FOREGROUND_SERVICE_LOCATION` | Keep GPS alive when app is backgrounded |
-| `INTERNET` | OSM map tiles, Overpass API (motorcycle surface data) |
-| `POST_NOTIFICATIONS` | Foreground service notification (Android 13+) |
-| `WAKE_LOCK` | Prevent screen sleep during session |
-| `READ_EXTERNAL_STORAGE` | GPX file access (pre-Android 13) |
-
-## Project Structure
-
-```
-app/src/main/java/com/curvecall/
-├── audio/              AndroidTtsEngine — platform TTS + audio focus
-├── data/
-│   ├── preferences/    UserPreferences — DataStore persistence
-│   ├── session/        SessionDataHolder — route data handoff
-│   └── tiles/          TileDownloader — offline tile pre-caching
-├── di/                 Hilt AppModule
-├── service/            SessionForegroundService
-├── ui/
-│   ├── home/           HomeScreen, HomeViewModel, CurveCallLogo
-│   ├── map/            OsmMapView, RouteOverlay, GpsMarkerOverlay
-│   ├── navigation/     CurveCallNavHost, NavRoutes
-│   ├── session/        SessionScreen, SessionViewModel, components/
-│   ├── settings/       SettingsScreen, SettingsViewModel
-│   └── theme/          Color, Theme (dark-only)
-├── CurveCallApplication.kt
-└── MainActivity.kt
-
-engine/src/main/kotlin/com/curvecall/engine/
-├── geo/                GeoMath, MengerCurvature
-├── pipeline/           Interpolator, CurvatureComputer, Segmenter,
-│                       Classifier, SpeedAdvisor, LeanAngleCalculator,
-│                       CompoundDetector, DataQualityChecker
-├── types/              CurveSegment, Severity, AnalysisConfig, ...
-├── MapMatcher.kt
-└── RouteAnalyzer.kt
-
-narration/src/main/kotlin/com/curvecall/narration/
-├── types/              NarrationConfig, NarrationEvent, TimingProfile
-├── NarrationManager.kt
-├── NarrationQueue.kt
-├── TemplateEngine.kt
-└── TimingCalculator.kt
-```
+**Min SDK:** 26 (Android 8.0) &nbsp;|&nbsp; **Target SDK:** 34 (Android 14)
 
 ## Tests
 
-The engine and narration modules have pure Kotlin unit tests:
+372+ unit tests across the engine and narration modules:
 
 ```bash
 # Run all tests
 ./gradlew test
 
-# Engine tests (13 test files — pipeline, geometry, MapMatcher)
+# Engine tests (150 tests — pipeline, geometry, MapMatcher, switchback detection)
 ./gradlew :engine:test
 
-# Narration tests (TemplateEngine, TimingCalculator, NarrationQueue)
+# Narration tests (222 tests — templates, timing, queue, verbosity, winding, suppression)
 ./gradlew :narration:test
 ```
 
@@ -194,24 +166,4 @@ CurveCue is a **driving aid**, not a safety system. Speed advisories and lean an
 
 ## License
 
-MIT License
-
-Copyright (c) 2025 Mustafa Hathiyari
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+[MIT](LICENSE) — Copyright (c) 2025 Mustafa Hathiyari

@@ -368,4 +368,180 @@ class CompoundDetectorTest {
             assertThat(resultCurves.first().data.compoundType).isNull()
         }
     }
+
+    @Nested
+    inner class SwitchbackDetection {
+
+        @Test
+        fun `three alternating sharp curves form switchbacks`() {
+            val curves = listOf(
+                TestHelpers.createTestCurve(
+                    direction = Direction.LEFT, severity = Severity.SHARP,
+                    minRadius = 35.0, arcLength = 60.0,
+                    startIndex = 0, endIndex = 6, distanceFromStart = 0.0
+                ),
+                TestHelpers.createTestCurve(
+                    direction = Direction.RIGHT, severity = Severity.SHARP,
+                    minRadius = 30.0, arcLength = 50.0,
+                    startIndex = 10, endIndex = 15, distanceFromStart = 150.0
+                ),
+                TestHelpers.createTestCurve(
+                    direction = Direction.LEFT, severity = Severity.HAIRPIN,
+                    minRadius = 20.0, arcLength = 40.0,
+                    startIndex = 20, endIndex = 24, distanceFromStart = 300.0
+                )
+            )
+
+            val fullSegments = mutableListOf<RouteSegment>()
+            for (i in curves.indices) {
+                fullSegments.add(RouteSegment.Curve(curves[i]))
+                if (i < curves.size - 1) {
+                    fullSegments.add(RouteSegment.Straight(
+                        StraightSegment(50.0, curves[i].endIndex + 1, curves[i + 1].startIndex - 1,
+                            curves[i].distanceFromStart + curves[i].arcLength)
+                    ))
+                }
+            }
+
+            val config = AnalysisConfig()
+            val points = (0..30).map { LatLon(48.0 + it * 0.00001, 11.0) }
+
+            val result = CompoundDetector.detect(fullSegments, points, config)
+            val resultCurves = result.filterIsInstance<RouteSegment.Curve>()
+            val switchbacks = resultCurves.filter { it.data.compoundType == CompoundType.SWITCHBACKS }
+
+            assertThat(switchbacks).hasSize(3)
+            assertThat(switchbacks[0].data.compoundSize).isEqualTo(3)
+        }
+
+        @Test
+        fun `switchbacks have correct positionInCompound`() {
+            val curves = listOf(
+                TestHelpers.createTestCurve(
+                    direction = Direction.RIGHT, severity = Severity.SHARP,
+                    arcLength = 50.0, startIndex = 0, endIndex = 5, distanceFromStart = 0.0
+                ),
+                TestHelpers.createTestCurve(
+                    direction = Direction.LEFT, severity = Severity.HAIRPIN,
+                    arcLength = 40.0, startIndex = 10, endIndex = 14, distanceFromStart = 150.0
+                ),
+                TestHelpers.createTestCurve(
+                    direction = Direction.RIGHT, severity = Severity.SHARP,
+                    arcLength = 50.0, startIndex = 20, endIndex = 25, distanceFromStart = 280.0
+                ),
+                TestHelpers.createTestCurve(
+                    direction = Direction.LEFT, severity = Severity.SHARP,
+                    arcLength = 50.0, startIndex = 30, endIndex = 35, distanceFromStart = 420.0
+                )
+            )
+
+            val fullSegments = mutableListOf<RouteSegment>()
+            for (i in curves.indices) {
+                fullSegments.add(RouteSegment.Curve(curves[i]))
+                if (i < curves.size - 1) {
+                    fullSegments.add(RouteSegment.Straight(
+                        StraightSegment(50.0, curves[i].endIndex + 1, curves[i + 1].startIndex - 1,
+                            curves[i].distanceFromStart + curves[i].arcLength)
+                    ))
+                }
+            }
+
+            val config = AnalysisConfig()
+            val points = (0..40).map { LatLon(48.0 + it * 0.00001, 11.0) }
+
+            val result = CompoundDetector.detect(fullSegments, points, config)
+            val resultCurves = result.filterIsInstance<RouteSegment.Curve>()
+            val switchbacks = resultCurves.filter { it.data.compoundType == CompoundType.SWITCHBACKS }
+
+            assertThat(switchbacks).hasSize(4)
+            assertThat(switchbacks[0].data.positionInCompound).isEqualTo(1)
+            assertThat(switchbacks[1].data.positionInCompound).isEqualTo(2)
+            assertThat(switchbacks[2].data.positionInCompound).isEqualTo(3)
+            assertThat(switchbacks[3].data.positionInCompound).isEqualTo(4)
+        }
+
+        @Test
+        fun `same-direction curves do not form switchbacks`() {
+            val curves = listOf(
+                TestHelpers.createTestCurve(
+                    direction = Direction.LEFT, severity = Severity.SHARP,
+                    arcLength = 50.0, startIndex = 0, endIndex = 5, distanceFromStart = 0.0
+                ),
+                TestHelpers.createTestCurve(
+                    direction = Direction.LEFT, severity = Severity.SHARP,
+                    arcLength = 50.0, startIndex = 10, endIndex = 15, distanceFromStart = 150.0
+                ),
+                TestHelpers.createTestCurve(
+                    direction = Direction.LEFT, severity = Severity.SHARP,
+                    arcLength = 50.0, startIndex = 20, endIndex = 25, distanceFromStart = 300.0
+                )
+            )
+
+            val fullSegments = curves.map { RouteSegment.Curve(it) as RouteSegment }
+            val config = AnalysisConfig()
+            val points = (0..30).map { LatLon(48.0 + it * 0.00001, 11.0) }
+
+            val result = CompoundDetector.detect(fullSegments, points, config)
+            val resultCurves = result.filterIsInstance<RouteSegment.Curve>()
+            val switchbacks = resultCurves.filter { it.data.compoundType == CompoundType.SWITCHBACKS }
+
+            assertThat(switchbacks).isEmpty()
+        }
+
+        @Test
+        fun `moderate curves do not form switchbacks`() {
+            val curves = listOf(
+                TestHelpers.createTestCurve(
+                    direction = Direction.LEFT, severity = Severity.MODERATE,
+                    arcLength = 50.0, startIndex = 0, endIndex = 5, distanceFromStart = 0.0
+                ),
+                TestHelpers.createTestCurve(
+                    direction = Direction.RIGHT, severity = Severity.MODERATE,
+                    arcLength = 50.0, startIndex = 10, endIndex = 15, distanceFromStart = 150.0
+                ),
+                TestHelpers.createTestCurve(
+                    direction = Direction.LEFT, severity = Severity.MODERATE,
+                    arcLength = 50.0, startIndex = 20, endIndex = 25, distanceFromStart = 300.0
+                )
+            )
+
+            val fullSegments = curves.map { RouteSegment.Curve(it) as RouteSegment }
+            val config = AnalysisConfig()
+            val points = (0..30).map { LatLon(48.0 + it * 0.00001, 11.0) }
+
+            val result = CompoundDetector.detect(fullSegments, points, config)
+            val resultCurves = result.filterIsInstance<RouteSegment.Curve>()
+            val switchbacks = resultCurves.filter { it.data.compoundType == CompoundType.SWITCHBACKS }
+
+            assertThat(switchbacks).isEmpty()
+        }
+
+        @Test
+        fun `gap over 200m breaks switchback sequence`() {
+            val curves = listOf(
+                TestHelpers.createTestCurve(
+                    direction = Direction.LEFT, severity = Severity.SHARP,
+                    arcLength = 50.0, startIndex = 0, endIndex = 5, distanceFromStart = 0.0
+                ),
+                TestHelpers.createTestCurve(
+                    direction = Direction.RIGHT, severity = Severity.SHARP,
+                    arcLength = 50.0, startIndex = 10, endIndex = 15, distanceFromStart = 150.0
+                ),
+                TestHelpers.createTestCurve(
+                    direction = Direction.LEFT, severity = Severity.SHARP,
+                    arcLength = 50.0, startIndex = 20, endIndex = 25, distanceFromStart = 500.0  // gap = 300m > 200m
+                )
+            )
+
+            val fullSegments = curves.map { RouteSegment.Curve(it) as RouteSegment }
+            val config = AnalysisConfig()
+            val points = (0..30).map { LatLon(48.0 + it * 0.00001, 11.0) }
+
+            val result = CompoundDetector.detect(fullSegments, points, config)
+            val resultCurves = result.filterIsInstance<RouteSegment.Curve>()
+            val switchbacks = resultCurves.filter { it.data.compoundType == CompoundType.SWITCHBACKS }
+
+            assertThat(switchbacks).isEmpty()
+        }
+    }
 }

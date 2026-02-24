@@ -15,6 +15,8 @@ import com.curvecall.engine.types.*
  */
 object CompoundDetector {
 
+    private const val SWITCHBACK_MAX_GAP = 200.0
+
     /**
      * Detects compound patterns and returns updated curve segments with compound annotations.
      *
@@ -49,10 +51,12 @@ object CompoundDetector {
         // Track which curves get compound annotations
         // Map from curve startIndex to updated CurveSegment
         val compoundUpdates = mutableMapOf<Int, Pair<CompoundType, Int>>()
+        val positionUpdates = mutableMapOf<Int, Int>()  // startIndex → positionInCompound
 
         // Detect S-bends/chicanes first — they're the most safety-critical compound
-        // pattern (require counter-steer). Then series from remaining curves.
+        // pattern (require counter-steer). Then switchbacks, series, tightening from remaining curves.
         detectSBendsAndChicanes(curves, curvePairs, config, compoundUpdates)
+        detectSwitchbacks(curves, config, compoundUpdates, positionUpdates)
         detectSeries(curves, curvePairs, config, compoundUpdates)
         detectTighteningSequences(curves, curvePairs, config, compoundUpdates)
 
@@ -61,11 +65,13 @@ object CompoundDetector {
             when (segment) {
                 is RouteSegment.Curve -> {
                     val update = compoundUpdates[segment.data.startIndex]
-                    if (update != null) {
+                    val position = positionUpdates[segment.data.startIndex]
+                    if (update != null || position != null) {
                         RouteSegment.Curve(
                             segment.data.copy(
-                                compoundType = update.first,
-                                compoundSize = update.second
+                                compoundType = update?.first ?: segment.data.compoundType,
+                                compoundSize = update?.second ?: segment.data.compoundSize,
+                                positionInCompound = position
                             )
                         )
                     } else {
@@ -73,6 +79,60 @@ object CompoundDetector {
                     }
                 }
                 is RouteSegment.Straight -> segment
+            }
+        }
+    }
+
+    /**
+     * Detects switchback sequences: 3+ consecutive SHARP or HAIRPIN curves with
+     * alternating directions and gaps < 200m. Sets positionInCompound (1-indexed).
+     */
+    private fun detectSwitchbacks(
+        curves: List<RouteSegment.Curve>,
+        config: AnalysisConfig,
+        compoundUpdates: MutableMap<Int, Pair<CompoundType, Int>>,
+        positionUpdates: MutableMap<Int, Int>
+    ) {
+        if (curves.size < 3) return
+
+        var seqStart = 0
+        while (seqStart < curves.size) {
+            val startCurve = curves[seqStart].data
+
+            // Skip if already compound or not sharp+
+            if (startCurve.startIndex in compoundUpdates || !isSeveritySharpOrTighter(startCurve.severity)) {
+                seqStart++
+                continue
+            }
+
+            var seqEnd = seqStart
+            while (seqEnd < curves.size - 1) {
+                val current = curves[seqEnd].data
+                val next = curves[seqEnd + 1].data
+
+                // Next must not already be compound
+                if (next.startIndex in compoundUpdates) break
+                // Next must be sharp or tighter
+                if (!isSeveritySharpOrTighter(next.severity)) break
+                // Must alternate direction
+                if (current.direction == next.direction) break
+                // Gap must be < 200m
+                val gap = next.distanceFromStart - (current.distanceFromStart + current.arcLength)
+                if (gap >= SWITCHBACK_MAX_GAP) break
+
+                seqEnd++
+            }
+
+            val seqLength = seqEnd - seqStart + 1
+            if (seqLength >= 3) {
+                for (k in seqStart..seqEnd) {
+                    val curve = curves[k].data
+                    compoundUpdates[curve.startIndex] = Pair(CompoundType.SWITCHBACKS, seqLength)
+                    positionUpdates[curve.startIndex] = k - seqStart + 1 // 1-indexed
+                }
+                seqStart = seqEnd + 1
+            } else {
+                seqStart++
             }
         }
     }

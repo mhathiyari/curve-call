@@ -68,5 +68,8 @@ data class CurveSegment(
     val surface: Surface? = null,
 
     /** True if this curve is at or near a road intersection (stop sign, traffic light). */
-    val isIntersection: Boolean = false
+    val isIntersection: Boolean = false,
+
+    /** 1-indexed position of this curve within a compound group (e.g., "2 of 4"). Null if standalone. */
+    val positionInCompound: Int? = null
 )

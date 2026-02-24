@@ -1,6 +1,8 @@
 package com.curvecall.narration.types
 
 import com.curvecall.engine.types.CurveSegment
+import com.curvecall.engine.types.Direction
+import com.curvecall.engine.types.Severity
 
 /**
  * A single narration event ready for delivery via TTS.
@@ -29,7 +31,11 @@ data class NarrationEvent(
     val curveDistanceFromStart: Double,
     val advisorySpeedMs: Double?,
     val associatedCurve: CurveSegment?,
-    val delivered: Boolean = false
+    val delivered: Boolean = false,
+    /** Curve direction for spatial audio pre-cue (populated from associatedCurve). */
+    val direction: Direction? = null,
+    /** Curve severity for spatial audio pre-cue (populated from associatedCurve). */
+    val severity: Severity? = null
 ) {
     companion object {
         /** Priority constants mapping to severity levels. */

@@ -50,7 +50,9 @@ import kotlin.concurrent.withLock
 class NarrationManager(
     private val templateEngine: TemplateEngine = TemplateEngine(),
     private val timingCalculator: TimingCalculator = TimingCalculator(),
-    private var config: NarrationConfig = NarrationConfig()
+    private var config: NarrationConfig = NarrationConfig(),
+    private val windingDetector: WindingDetector = WindingDetector(),
+    private val transitionDetector: TransitionDetector = TransitionDetector()
 ) {
     /**
      * Listener interface for narration events.
@@ -307,8 +309,9 @@ class NarrationManager(
 
         // Urgent alerts bypass everything — fire immediately
         if (urgentEvent != null) {
-            val urgentNarration = urgentEvent.copy(
-                text = "Brake, ${urgentEvent.text}",
+            val regenerated = regenerateTextAtCurrentSpeed(urgentEvent)
+            val urgentNarration = regenerated.copy(
+                text = "Brake, ${regenerated.text}",
                 priority = NarrationEvent.PRIORITY_URGENT
             )
             queue.markCurrentDelivered()
@@ -320,7 +323,8 @@ class NarrationManager(
         // Check for interrupts: if something is playing and a higher-priority ready event exists
         val interrupt = queue.checkForInterrupt(readyEvents)
         if (interrupt != null) {
-            listener?.onInterrupt(interrupt)
+            val regenerated = regenerateTextAtCurrentSpeed(interrupt)
+            listener?.onInterrupt(regenerated)
             return
         }
 
@@ -329,8 +333,31 @@ class NarrationManager(
         if (queue.currentlyPlaying() != null) return // something is already playing
 
         val best = readyEvents.maxByOrNull { it.priority } ?: return
+        val regenerated = regenerateTextAtCurrentSpeed(best)
         queue.markPlaying(best)
-        listener?.onNarration(best)
+        listener?.onNarration(regenerated)
+    }
+
+    /**
+     * Re-generate narration text for an event using the current speed for tier resolution.
+     * This allows speed-adaptive verbosity: at high speed the text becomes terser,
+     * ensuring the driver hears appropriately concise instructions.
+     *
+     * Called at fire-time (not at route-load time) so the text reflects the driver's
+     * actual speed at the moment of delivery rather than a stale pre-generated value.
+     *
+     * @param event The narration event whose text should be re-generated.
+     * @return A copy of the event with updated text, or the original event unchanged
+     *   if it has no associated curve or if text generation returns null.
+     */
+    private fun regenerateTextAtCurrentSpeed(event: NarrationEvent): NarrationEvent {
+        val curve = event.associatedCurve ?: return event
+        // Skip re-generation for merged events (text produced from multiple curves).
+        // Compare against what the single curve would generate at route-load time (no speed).
+        val singleCurveText = templateEngine.generateNarration(curve, config) ?: return event
+        if (event.text != singleCurveText) return event
+        val newText = templateEngine.generateNarration(curve, config, currentSpeedMs) ?: return event
+        return event.copy(text = newText)
     }
 
     // ========================================================================
@@ -382,6 +409,56 @@ class NarrationManager(
 
         // Merge consecutive close curve events into combined narrations
         mergeCloseEvents(events)
+
+        // Detect winding sections and insert overview events / suppress non-breakthrough curves
+        val allCurves = routeSegments
+            .filterIsInstance<RouteSegment.Curve>()
+            .map { it.data }
+        if (allCurves.size >= WindingDetector.MIN_CURVES_FOR_WINDING) {
+            val estimatedSpeed = 13.9 // ~50 km/h default
+            val windingSections = windingDetector.detectWindingSections(allCurves, estimatedSpeed)
+            for (section in windingSections) {
+                // Insert winding overview event at the section start
+                val tier = templateEngine.resolveTier(config)
+                val overviewText = templateEngine.generateWindingOverview(section, config, tier)
+                events.add(
+                    NarrationEvent(
+                        text = overviewText,
+                        priority = NarrationEvent.PRIORITY_WARNING,
+                        curveDistanceFromStart = section.startDistance - 50.0, // announce 50m before
+                        advisorySpeedMs = section.advisorySpeedMs,
+                        associatedCurve = null
+                    )
+                )
+
+                // Suppress non-breakthrough individual events within the section
+                events.removeAll { event ->
+                    val curve = event.associatedCurve ?: return@removeAll false
+                    curve.distanceFromStart >= section.startDistance &&
+                        curve.distanceFromStart <= section.endDistance &&
+                        !windingDetector.shouldNarrateInWindingSection(curve, section)
+                }
+            }
+        }
+
+        // Detect transitions and insert transition events
+        val transitions = transitionDetector.detectAll(allCurves)
+        for (transition in transitions) {
+            val tier = templateEngine.resolveTier(config)
+            val text = templateEngine.generateTransitionNarration(transition, tier)
+            events.add(
+                NarrationEvent(
+                    text = text,
+                    priority = NarrationEvent.PRIORITY_MODERATE, // mid-priority info event
+                    curveDistanceFromStart = transition.distanceFromStart - 100.0, // 100m ahead
+                    advisorySpeedMs = null,
+                    associatedCurve = null
+                )
+            )
+        }
+
+        // Re-sort by distance since we added winding/transition events
+        events.sortBy { it.curveDistanceFromStart }
 
         queue.enqueueAll(events)
     }
@@ -452,14 +529,18 @@ class NarrationManager(
     /**
      * Create a single merged narration event from a group of close curve events.
      *
-     * The first curve keeps its full narration text. Subsequent curves are
-     * appended as brief descriptions: ", then [severity] [direction]".
+     * The first curve keeps its full narration text. Subsequent curves use
+     * context-sensitive connectors:
+     * - Gap <30m → "into" (immediate connection)
+     * - Same severity → "then" (rhythmic continuation)
+     * - Different severity → "followed by" (contrast signal)
      */
     private fun createMergedEvent(group: List<NarrationEvent>): NarrationEvent {
         val first = group.first()
         val parts = mutableListOf(first.text)
 
         for (k in 1 until group.size) {
+            val prevCurve = group[k - 1].associatedCurve!!
             val curve = group[k].associatedCurve!!
             val dir = if (curve.direction == Direction.LEFT) "left" else "right"
             val brief = when (curve.severity) {
@@ -469,7 +550,16 @@ class NarrationManager(
                 Severity.MODERATE -> "moderate $dir"
                 Severity.GENTLE -> "gentle $dir"
             }
-            parts.add("then $brief")
+
+            // Context-sensitive connector word
+            val gap = curve.distanceFromStart -
+                (prevCurve.distanceFromStart + prevCurve.arcLength)
+            val connector = when {
+                gap < 30.0 -> "into"
+                prevCurve.severity == curve.severity -> "then"
+                else -> "followed by"
+            }
+            parts.add("$connector $brief")
         }
 
         return NarrationEvent(

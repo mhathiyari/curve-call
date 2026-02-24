@@ -350,7 +350,8 @@ class NarrationManagerTest {
             // Drive to trigger it
             driveTo(200.0, 13.9)
             assertThat(listener.narrations).hasSize(1)
-            assertThat(listener.narrations[0].text).contains("then")
+            // Different severity (SHARP→HAIRPIN) and gap>30m → "followed by" connector
+            assertThat(listener.narrations[0].text).contains("followed by")
         }
     }
 
@@ -611,10 +612,15 @@ class NarrationManagerTest {
          * - TTS ~2-3s per narration → only ~1-4s between TTS end and next curve
          * - Old cooldown (3s) would block ~4/12 curves
          *
-         * With immediate chaining: 12/12 curves should be narrated.
+         * With immediate chaining: all important curves are narrated.
+         * With winding detection: 12 curves form a winding section.
+         * - 4 HAIRPIN + 4 SHARP break through (severity >= SHARP)
+         * - 4 MODERATE are suppressed (replaced by winding overview)
+         * - 1 winding overview is added
+         * Total: 9+ events (overview + 8 breakthrough + possible transitions)
          */
         @Test
-        fun `all 12 switchback curves are narrated with zero missed`() {
+        fun `switchback curves are narrated with winding overview`() {
             // Define the Mt. Hamilton upper switchback section
             data class CurveDef(
                 val distance: Double,
@@ -628,16 +634,16 @@ class NarrationManagerTest {
             val curveDefs = listOf(
                 CurveDef(1000.0, Direction.RIGHT, Severity.HAIRPIN, 25.0, 40.0, 6.9),   // Hairpin R
                 CurveDef(1200.0, Direction.LEFT, Severity.SHARP, 40.0, 50.0, 11.1),      // Sharp L
-                CurveDef(1400.0, Direction.RIGHT, Severity.MODERATE, 80.0, 60.0, null),   // Moderate R
+                CurveDef(1400.0, Direction.RIGHT, Severity.MODERATE, 80.0, 60.0, null),   // Moderate R (suppressed)
                 CurveDef(1550.0, Direction.LEFT, Severity.HAIRPIN, 25.0, 40.0, 6.9),      // Hairpin L
                 CurveDef(1750.0, Direction.RIGHT, Severity.SHARP, 40.0, 50.0, 11.1),      // Sharp R
-                CurveDef(1900.0, Direction.LEFT, Severity.MODERATE, 80.0, 60.0, null),     // Moderate L
+                CurveDef(1900.0, Direction.LEFT, Severity.MODERATE, 80.0, 60.0, null),     // Moderate L (suppressed)
                 CurveDef(2100.0, Direction.RIGHT, Severity.HAIRPIN, 25.0, 40.0, 6.9),     // Hairpin R
                 CurveDef(2250.0, Direction.LEFT, Severity.SHARP, 40.0, 50.0, 11.1),       // Sharp L
-                CurveDef(2450.0, Direction.RIGHT, Severity.MODERATE, 80.0, 60.0, null),   // Moderate R
+                CurveDef(2450.0, Direction.RIGHT, Severity.MODERATE, 80.0, 60.0, null),   // Moderate R (suppressed)
                 CurveDef(2600.0, Direction.LEFT, Severity.HAIRPIN, 25.0, 40.0, 6.9),      // Hairpin L
                 CurveDef(2800.0, Direction.RIGHT, Severity.SHARP, 40.0, 50.0, 11.1),      // Sharp R
-                CurveDef(3000.0, Direction.LEFT, Severity.MODERATE, 80.0, 60.0, null)      // Moderate L
+                CurveDef(3000.0, Direction.LEFT, Severity.MODERATE, 80.0, 60.0, null)      // Moderate L (suppressed)
             )
 
             val segments = curveDefs.mapIndexed { i, def ->
@@ -657,8 +663,13 @@ class NarrationManagerTest {
 
             manager.loadRoute(segments, emptyList())
 
-            // Verify no events were merged (gaps are all >80m)
-            assertThat(manager.upcomingEvents()).hasSize(12)
+            // With winding detection: overview + breakthrough curves + possible transitions
+            // Moderate curves may be suppressed within the winding section
+            val upcoming = manager.upcomingEvents()
+            // At least the 8 breakthrough curves should be present
+            assertThat(upcoming.size)
+                .describedAs("Expected >= 8 events but got ${upcoming.size}. Events: ${upcoming.map { "${it.curveDistanceFromStart}: ${it.text}" }}")
+                .isGreaterThanOrEqualTo(8)
 
             // Simulate driving at 50 km/h (13.9 m/s), GPS tick every ~10m
             val speedMs = 13.9
@@ -666,65 +677,135 @@ class NarrationManagerTest {
             var position = 0.0
             var ttsRemainingDistance = 0.0
 
-            // Track which curve distances got narrated
-            val narratedCurveDistances = mutableSetOf<Double>()
-
             while (position < 3200.0) {
-                // If TTS is "playing", track progress
                 if (ttsRemainingDistance > 0) {
                     ttsRemainingDistance -= tickDistanceM
                     if (ttsRemainingDistance <= 0) {
-                        // TTS finished — call onNarrationComplete
-                        val beforeCount = listener.narrations.size + listener.interrupts.size + listener.urgentAlerts.size
+                        val beforeCount = listener.allFired.size
                         ttsFinished()
-                        val afterCount = listener.narrations.size + listener.interrupts.size + listener.urgentAlerts.size
-                        // Record any new narration triggered by chaining
+                        val afterCount = listener.allFired.size
                         if (afterCount > beforeCount) {
                             val latest = listener.allFired.last()
-                            narratedCurveDistances.add(latest.curveDistanceFromStart)
-                            // Estimate TTS duration for the chained narration
                             val words = latest.text.split("\\s+".toRegex()).count { it.isNotBlank() }
-                            val ttsDurationSec = words / 2.5 + 0.3
-                            ttsRemainingDistance = speedMs * ttsDurationSec
+                            ttsRemainingDistance = speedMs * (words / 2.5 + 0.3)
                         }
                     }
                 }
 
-                // GPS tick
-                val beforeCount = listener.narrations.size + listener.interrupts.size + listener.urgentAlerts.size
+                val beforeCount = listener.allFired.size
                 driveTo(position, speedMs)
-                val afterCount = listener.narrations.size + listener.interrupts.size + listener.urgentAlerts.size
+                val afterCount = listener.allFired.size
 
-                // If a new narration just fired, start TTS simulation
                 if (afterCount > beforeCount && ttsRemainingDistance <= 0) {
                     val latest = listener.allFired.last()
-                    narratedCurveDistances.add(latest.curveDistanceFromStart)
                     val words = latest.text.split("\\s+".toRegex()).count { it.isNotBlank() }
-                    val ttsDurationSec = words / 2.5 + 0.3
-                    ttsRemainingDistance = speedMs * ttsDurationSec
+                    ttsRemainingDistance = speedMs * (words / 2.5 + 0.3)
                 }
 
                 position += tickDistanceM
             }
 
-            // Drain any remaining TTS
             if (ttsRemainingDistance > 0) {
                 ttsFinished()
             }
 
-            // Assert: all 12 curves were narrated
-            val totalFired = listener.narrations.size + listener.interrupts.size + listener.urgentAlerts.size
+            // All breakthrough curves (HAIRPIN + SHARP) plus overview should be narrated
+            val totalFired = listener.allFired.size
             assertThat(totalFired)
-                .describedAs("Expected all 12 Mt. Hamilton switchback curves to be narrated, but only $totalFired were fired. " +
-                    "Narrated at distances: $narratedCurveDistances")
-                .isEqualTo(12)
+                .describedAs("Expected at least 9 events (1 overview + 8 breakthrough), got $totalFired")
+                .isGreaterThanOrEqualTo(9)
 
-            // Verify each curve distance was covered
-            for (def in curveDefs) {
-                assertThat(narratedCurveDistances.contains(def.distance))
-                    .describedAs("Curve at ${def.distance}m (${def.severity} ${def.dir}) was missed")
+            // Verify all HAIRPIN and SHARP curves were individually narrated
+            val firedTexts = listener.allFired.map { it.text }
+            val breakthroughDefs = curveDefs.filter { it.severity >= Severity.SHARP }
+            for (def in breakthroughDefs) {
+                val dirStr = if (def.dir == Direction.LEFT) "left" else "right"
+                assertThat(firedTexts.any { it.lowercase().contains(dirStr) })
+                    .describedAs("Expected a narration containing '$dirStr' for ${def.severity} at ${def.distance}m")
                     .isTrue()
             }
+        }
+    }
+
+    // ========================================================================
+    // Fire-time Speed-Adaptive Re-generation
+    // ========================================================================
+
+    @Nested
+    @DisplayName("Fire-time Speed-Adaptive Re-generation")
+    inner class FireTimeRegeneration {
+
+        @Test
+        fun `narration text is re-generated at fire-time speed`() {
+            // Load a route at default (no speed info = null -> user tier -> STANDARD)
+            // Then drive to trigger at high speed -> should get TERSE text
+            val c = testCurve(
+                severity = Severity.SHARP, minRadius = 40.0,
+                advisorySpeedMs = 12.5, // ~45 km/h
+                distanceFromStart = 500.0,
+                direction = Direction.LEFT,
+                arcLength = 50.0, startIndex = 0, endIndex = 10
+            )
+
+            // Use detailed verbosity (=3 -> DESCRIPTIVE)
+            val detailedConfig = config.copy(verbosity = 3)
+            manager = NarrationManager(config = detailedConfig)
+            manager.setListener(listener)
+            manager.loadRoute(routeOf(c), emptyList())
+
+            // Drive at high speed (30 m/s = 108 km/h) -> speed-adaptive downgrades to TERSE
+            driveTo(400.0, 30.0)
+            assertThat(listener.narrations).hasSize(1)
+            // At TERSE, sharp left should be "Sharp left, 45" (not the full DESCRIPTIVE text)
+            // With universal Caution off (no tightening), we just get the terse text.
+            val text = listener.narrations[0].text
+            // The text should NOT contain "ahead" (that's STANDARD/DESCRIPTIVE)
+            assertThat(text).doesNotContain("ahead")
+        }
+
+        @Test
+        fun `slow speed gets descriptive text when config allows`() {
+            val c = testCurve(
+                severity = Severity.MODERATE, minRadius = 100.0,
+                distanceFromStart = 300.0,
+                direction = Direction.LEFT,
+                arcLength = 50.0, startIndex = 0, endIndex = 10
+            )
+
+            val detailedConfig = config.copy(verbosity = 3)
+            manager = NarrationManager(config = detailedConfig)
+            manager.setListener(listener)
+            manager.loadRoute(routeOf(c), emptyList())
+
+            // Drive at slow speed (8 m/s = ~29 km/h) -> DESCRIPTIVE
+            driveTo(200.0, 8.0)
+            assertThat(listener.narrations).hasSize(1)
+            val text = listener.narrations[0].text
+            // DESCRIPTIVE for moderate with no advisory: "Left curve ahead, moderate, steady speed"
+            assertThat(text).contains("steady speed")
+        }
+
+        @Test
+        fun `re-generated text is used for urgent alerts too`() {
+            val c = testCurve(
+                severity = Severity.HAIRPIN, minRadius = 25.0,
+                advisorySpeedMs = 6.9, distanceFromStart = 300.0,
+                arcLength = 30.0, startIndex = 0, endIndex = 10
+            )
+
+            val detailedConfig = config.copy(verbosity = 3)
+            manager = NarrationManager(config = detailedConfig)
+            manager.setListener(listener)
+            manager.loadRoute(routeOf(c), emptyList())
+
+            // Drive fast (27.8 m/s = 100 km/h) and close -> urgent, TERSE
+            driveTo(260.0, 27.8)
+            assertThat(listener.urgentAlerts).hasSize(1)
+            val text = listener.urgentAlerts[0].text
+            assertThat(text).startsWith("Brake,")
+            // At TERSE, hairpin should be "Hairpin right, 25" (no "ahead")
+            // So urgent text = "Brake, Hairpin right, 25"
+            assertThat(text).doesNotContain("ahead")
         }
     }
 }

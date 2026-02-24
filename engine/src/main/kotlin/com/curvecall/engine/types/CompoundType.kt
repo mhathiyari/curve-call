@@ -14,5 +14,8 @@ enum class CompoundType {
     SERIES,
 
     /** Same-direction curves where each is tighter than the last. */
-    TIGHTENING_SEQUENCE
+    TIGHTENING_SEQUENCE,
+
+    /** 3+ consecutive sharp/hairpin curves with alternating directions and <200m gaps. */
+    SWITCHBACKS
 }

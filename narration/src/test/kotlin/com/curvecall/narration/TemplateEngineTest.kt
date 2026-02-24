@@ -122,9 +122,9 @@ class TemplateEngineTest {
         fun `gentle right curve ahead`() {
             val text = engine.generateNarration(
                 curve(severity = Severity.GENTLE, direction = Direction.RIGHT),
-                carDetailed // Gentle only narrated at Detailed
+                carDetailed // Gentle only narrated at Detailed -> DESCRIPTIVE tier
             )
-            assertThat(text).isEqualTo("Right curve ahead, gentle")
+            assertThat(text).isEqualTo("Right curve ahead, gentle, steady speed")
         }
 
         @Test
@@ -220,7 +220,7 @@ class TemplateEngineTest {
                 ),
                 carStandard
             )
-            assertThat(text).isEqualTo("Hairpin left ahead, tightening, slow to 20")
+            assertThat(text).isEqualTo("Caution, Hairpin left ahead, tightening, slow to 20")
         }
 
         @Test
@@ -293,12 +293,13 @@ class TemplateEngineTest {
                 ),
                 carStandard
             )
-            assertThat(text).isEqualTo("Right curve ahead, moderate, tightening")
+            assertThat(text).isEqualTo("Caution, Right curve ahead, moderate, tightening")
         }
 
         @Test
         fun `tightening narrated at minimal verbosity for moderate curve`() {
             // Tightening curves are always narrated regardless of verbosity
+            // At TERSE tier, modifiers text is skipped but Caution prefix conveys danger
             val text = engine.generateNarration(
                 curve(
                     severity = Severity.MODERATE,
@@ -308,7 +309,7 @@ class TemplateEngineTest {
                 carMinimal
             )
             assertThat(text).isNotNull()
-            assertThat(text).contains("tightening")
+            assertThat(text).startsWith("Caution")
         }
 
         @Test
@@ -362,9 +363,9 @@ class TemplateEngineTest {
                     arcLength = 400.0,
                     modifiers = setOf(CurveModifier.LONG)
                 ),
-                carDetailed
+                carDetailed // DESCRIPTIVE tier adds "steady speed"
             )
-            assertThat(text).isEqualTo("Long gentle left")
+            assertThat(text).isEqualTo("Long gentle left, steady speed")
         }
 
         @Test
@@ -379,6 +380,7 @@ class TemplateEngineTest {
                 ),
                 carStandard
             )
+            assertThat(text).startsWith("Caution")
             assertThat(text).contains("Long firm right")
             assertThat(text).contains("tightening")
             assertThat(text).contains("slow to 45")
@@ -557,7 +559,7 @@ class TemplateEngineTest {
         }
 
         @Test
-        fun `car mode tightening does NOT prepend Caution`() {
+        fun `car mode tightening now prepends Caution`() {
             val text = engine.generateNarration(
                 curve(
                     severity = Severity.SHARP,
@@ -567,7 +569,7 @@ class TemplateEngineTest {
                 ),
                 carStandard
             )
-            assertThat(text).doesNotStartWith("Caution")
+            assertThat(text).startsWith("Caution")
         }
 
         @Test
@@ -713,6 +715,7 @@ class TemplateEngineTest {
                 ),
                 carStandard
             )
+            assertThat(text).startsWith("Caution")
             assertThat(text).contains("right, tightening through 3 curves")
             assertThat(text).contains("slow to")
         }
@@ -842,6 +845,7 @@ class TemplateEngineTest {
         @Test
         fun `tightening overrides verbosity filter`() {
             // Gentle + tightening should be narrated even at minimal
+            // At TERSE tier, modifiers text is skipped but Caution prefix conveys danger
             val text = engine.generateNarration(
                 curve(
                     severity = Severity.GENTLE,
@@ -851,7 +855,7 @@ class TemplateEngineTest {
                 carMinimal
             )
             assertThat(text).isNotNull()
-            assertThat(text).contains("tightening")
+            assertThat(text).startsWith("Caution")
         }
     }
 
@@ -1059,7 +1063,7 @@ class TemplateEngineTest {
                 ),
                 carStandard
             )
-            assertThat(text).isEqualTo("Sharp right ahead, tightening, slow to 40")
+            assertThat(text).isEqualTo("Caution, Sharp right ahead, tightening, slow to 40")
         }
 
         @Test
@@ -1197,6 +1201,177 @@ class TemplateEngineTest {
             )
             assertThat(text).contains("Chicane")
             assertThat(text).contains("lean 30 degrees")
+        }
+    }
+
+    // ========================================================================
+    // Verbosity Tier Dispatch
+    // ========================================================================
+
+    @Nested
+    @DisplayName("Verbosity Tier Dispatch")
+    inner class VerbosityTierDispatch {
+
+        // TERSE tier tests (verbosity=1, no speed override)
+
+        @Test
+        fun `TERSE - sharp left is brief`() {
+            val text = engine.generateNarration(
+                curve(severity = Severity.SHARP, direction = Direction.LEFT),
+                carMinimal // verbosity=1 -> TERSE
+            )
+            assertThat(text).isEqualTo("Sharp left")
+        }
+
+        @Test
+        fun `TERSE - hairpin right with speed shows just number`() {
+            val text = engine.generateNarration(
+                curve(severity = Severity.HAIRPIN, direction = Direction.RIGHT, advisorySpeedMs = 5.56),
+                carMinimal
+            )
+            assertThat(text).isEqualTo("Hairpin right, 20")
+        }
+
+        @Test
+        fun `TERSE - sharp S-bend is brief`() {
+            val text = engine.generateNarration(
+                curve(
+                    direction = Direction.LEFT, severity = Severity.SHARP,
+                    compoundType = CompoundType.S_BEND, compoundSize = 2
+                ),
+                carMinimal
+            )
+            assertThat(text).isEqualTo("S-bend, left-right")
+        }
+
+        @Test
+        fun `TERSE - chicane is brief`() {
+            val text = engine.generateNarration(
+                curve(
+                    direction = Direction.LEFT, severity = Severity.SHARP,
+                    compoundType = CompoundType.CHICANE, compoundSize = 2,
+                    advisorySpeedMs = 8.34
+                ),
+                carMinimal
+            )
+            assertThat(text).isEqualTo("Chicane, left-right")
+        }
+
+        @Test
+        fun `TERSE - series is brief`() {
+            val text = engine.generateNarration(
+                curve(
+                    direction = Direction.RIGHT, severity = Severity.SHARP,
+                    compoundType = CompoundType.SERIES, compoundSize = 5
+                ),
+                carMinimal
+            )
+            assertThat(text).isEqualTo("5 curves, sharp")
+        }
+
+        @Test
+        fun `TERSE - 90 degree is brief`() {
+            val text = engine.generateNarration(
+                curve(
+                    severity = Severity.SHARP, direction = Direction.RIGHT,
+                    is90Degree = true, advisorySpeedMs = 7.0
+                ),
+                carMinimal
+            )
+            assertThat(text).isEqualTo("90 right, 25")
+        }
+
+        @Test
+        fun `TERSE - tightening sequence is brief`() {
+            val text = engine.generateNarration(
+                curve(
+                    direction = Direction.RIGHT, severity = Severity.SHARP,
+                    compoundType = CompoundType.TIGHTENING_SEQUENCE, compoundSize = 3,
+                    modifiers = setOf(CurveModifier.TIGHTENING), advisorySpeedMs = 10.0
+                ),
+                carMinimal
+            )
+            assertThat(text).isEqualTo("Caution, Tightening, 3 curves")
+        }
+
+        // DESCRIPTIVE tier tests (verbosity=3)
+
+        @Test
+        fun `DESCRIPTIVE - hairpin includes very tight`() {
+            val text = engine.generateNarration(
+                curve(severity = Severity.HAIRPIN, direction = Direction.LEFT, advisorySpeedMs = 5.56),
+                carDetailed
+            )
+            assertThat(text).isEqualTo("Hairpin left ahead, very tight, slow to 20")
+        }
+
+        @Test
+        fun `DESCRIPTIVE - moderate with no advisory gets steady speed`() {
+            val text = engine.generateNarration(
+                curve(severity = Severity.MODERATE, direction = Direction.LEFT),
+                carDetailed
+            )
+            assertThat(text).isEqualTo("Left curve ahead, moderate, steady speed")
+        }
+
+        @Test
+        fun `DESCRIPTIVE - S-bend has ahead prefix`() {
+            val text = engine.generateNarration(
+                curve(
+                    direction = Direction.LEFT, severity = Severity.MODERATE,
+                    compoundType = CompoundType.S_BEND, compoundSize = 2
+                ),
+                carDetailed
+            )
+            assertThat(text).isEqualTo("S-bend ahead, left into right, moderate")
+        }
+
+        @Test
+        fun `DESCRIPTIVE - chicane has ahead prefix`() {
+            val text = engine.generateNarration(
+                curve(
+                    direction = Direction.LEFT, severity = Severity.SHARP,
+                    compoundType = CompoundType.CHICANE, compoundSize = 2,
+                    advisorySpeedMs = 8.34
+                ),
+                carDetailed
+            )
+            assertThat(text).isEqualTo("Chicane ahead, left-right, slow to 30")
+        }
+
+        @Test
+        fun `DESCRIPTIVE - series has ahead suffix`() {
+            val text = engine.generateNarration(
+                curve(
+                    direction = Direction.RIGHT, severity = Severity.SHARP,
+                    compoundType = CompoundType.SERIES, compoundSize = 5,
+                    advisorySpeedMs = 12.5
+                ),
+                carDetailed
+            )
+            assertThat(text).isEqualTo("Series of 5 sharp curves ahead, slow to 45")
+        }
+
+        // Speed-adaptive test (verbosity=3 but high speed -> TERSE)
+
+        @Test
+        fun `speed-adaptive downgrades DESCRIPTIVE to TERSE at high speed`() {
+            val text = engine.generateNarration(
+                curve(severity = Severity.SHARP, direction = Direction.LEFT, advisorySpeedMs = 12.5),
+                carDetailed,
+                currentSpeedMs = 30.0 // 108 km/h -> TERSE
+            )
+            assertThat(text).isEqualTo("Sharp left, 45")
+        }
+
+        @Test
+        fun `speed-adaptive downgrades DESCRIPTIVE to STANDARD at moderate speed`() {
+            val text = engine.generateNarration(
+                curve(severity = Severity.MODERATE, direction = Direction.LEFT),
+                carDetailed,
+                currentSpeedMs = 16.67 // 60 km/h -> STANDARD
+            )
+            assertThat(text).isEqualTo("Left curve ahead, moderate")
         }
     }
 }

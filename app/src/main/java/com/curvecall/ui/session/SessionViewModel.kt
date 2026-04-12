@@ -593,6 +593,7 @@ class SessionViewModel @Inject constructor(
                 com.curvecall.engine.types.CompoundType.CHICANE -> parts.add("chicane")
                 com.curvecall.engine.types.CompoundType.SERIES -> parts.add("series of ${curve.compoundSize ?: "?"}")
                 com.curvecall.engine.types.CompoundType.TIGHTENING_SEQUENCE -> parts.add("tightening sequence")
+                com.curvecall.engine.types.CompoundType.SWITCHBACKS -> parts.add("switchbacks")
             }
         }
 

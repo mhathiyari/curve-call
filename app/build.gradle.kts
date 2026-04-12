@@ -5,25 +5,57 @@ plugins {
     id("org.jetbrains.kotlin.kapt")
 }
 
+val releaseStoreFile = providers.gradleProperty("CURVECUE_UPLOAD_STORE_FILE")
+val releaseStorePassword = providers.gradleProperty("CURVECUE_UPLOAD_STORE_PASSWORD")
+val releaseKeyAlias = providers.gradleProperty("CURVECUE_UPLOAD_KEY_ALIAS")
+val releaseKeyPassword = providers.gradleProperty("CURVECUE_UPLOAD_KEY_PASSWORD")
+val privacyPolicyUrl = providers.gradleProperty("CURVECUE_PRIVACY_POLICY_URL")
+
+val releaseSigningConfigured = listOf(
+    releaseStoreFile,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword,
+).all { it.isPresent }
+
 android {
     namespace = "com.curvecall"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.curvecall"
         minSdk = 26
-        targetSdk = 34
+        targetSdk = 35
         versionCode = 1
-        versionName = "1.0"
+        versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField(
+            "String",
+            "PRIVACY_POLICY_URL",
+            "\"${privacyPolicyUrl.orNull ?: ""}\""
+        )
         vectorDrawables {
             useSupportLibrary = true
         }
     }
 
+    signingConfigs {
+        if (releaseSigningConfigured) {
+            create("release") {
+                storeFile = file(releaseStoreFile.get())
+                storePassword = releaseStorePassword.get()
+                keyAlias = releaseKeyAlias.get()
+                keyPassword = releaseKeyPassword.get()
+            }
+        }
+    }
+
     buildTypes {
         release {
+            if (releaseSigningConfigured) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -42,6 +74,7 @@ android {
     }
 
     buildFeatures {
+        buildConfig = true
         compose = true
     }
 

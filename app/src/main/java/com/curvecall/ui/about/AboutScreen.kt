@@ -1,5 +1,6 @@
 package com.curvecall.ui.about
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,6 +19,7 @@ import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -26,10 +28,12 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.curvecall.BuildConfig
 import com.curvecall.ui.disclaimer.DisclaimerText
 import com.curvecall.ui.theme.CurveCuePrimary
 
@@ -45,6 +49,9 @@ import com.curvecall.ui.theme.CurveCuePrimary
 fun AboutScreen(
     onNavigateBack: () -> Unit
 ) {
+    val uriHandler = LocalUriHandler.current
+    val privacyPolicyUrl = BuildConfig.PRIVACY_POLICY_URL
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -93,7 +100,7 @@ fun AboutScreen(
                 color = MaterialTheme.colorScheme.onBackground
             )
             Text(
-                text = "Version 1.0",
+                text = "Version ${BuildConfig.VERSION_NAME}",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
             )
@@ -108,6 +115,73 @@ fun AboutScreen(
                 textAlign = TextAlign.Center,
                 lineHeight = 20.sp
             )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Divider(color = MaterialTheme.colorScheme.surfaceVariant)
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Text(
+                text = "Privacy",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "CurveCue uses device location during an active session " +
+                            "to track your position and time curve narration.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 20.sp
+                    )
+                    Text(
+                        text = "Searches, reverse geocoding, map tiles, and online routing " +
+                            "may send destination or route coordinates to OpenStreetMap-based " +
+                            "services and OSRM when those features are used.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 20.sp
+                    )
+                    Text(
+                        text = "Driving preferences and recent destinations are stored on " +
+                            "your device. This app does not provide account creation, cloud " +
+                            "sync, or in-app advertising in the current build.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 20.sp
+                    )
+                    if (privacyPolicyUrl.isNotBlank()) {
+                        OutlinedButton(
+                            onClick = { uriHandler.openUri(privacyPolicyUrl) }
+                        ) {
+                            Text("Open Privacy Policy")
+                        }
+                    } else {
+                        Text(
+                            text = "Set CURVECUE_PRIVACY_POLICY_URL in Gradle properties " +
+                                "before release to expose the hosted privacy policy here.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                            lineHeight = 18.sp
+                        )
+                    }
+                }
+            }
 
             Spacer(modifier = Modifier.height(24.dp))
 
@@ -155,7 +229,7 @@ fun AboutScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "CurveCall is open-source software. Road geometry data is derived " +
+                text = "CurveCue is open-source software. Road geometry data is derived " +
                     "from OpenStreetMap, a collaborative project to create a free editable " +
                     "map of the world.",
                 style = MaterialTheme.typography.bodyMedium,

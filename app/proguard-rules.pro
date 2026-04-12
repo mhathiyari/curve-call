@@ -56,6 +56,11 @@
 -dontwarn org.openstreetmap.osmosis.**
 -dontwarn org.codehaus.stax2.**
 -dontwarn com.ctc.wstx.**
+# GraphHopper packages server/import helpers that are not used by this app's
+# pre-built graph loading path, but R8 still sees their optional JVM references.
+-dontwarn com.google.protobuf.**
+-dontwarn javax.imageio.**
+-dontwarn javax.lang.model.**
 
 # ---- SLF4J / Logback Android ----
 -keep class org.slf4j.** { *; }

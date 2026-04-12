@@ -70,14 +70,14 @@ class SessionForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> {
-                val notification = createNotification("CurveCall session active")
+                val notification = createNotification("CurveCue session active")
                 startForeground(NOTIFICATION_ID, notification)
             }
             ACTION_PAUSE -> {
                 updateNotification("Session paused")
             }
             ACTION_RESUME -> {
-                updateNotification("CurveCall session active")
+                updateNotification("CurveCue session active")
             }
             ACTION_STOP -> {
                 stopForeground(STOP_FOREGROUND_REMOVE)
@@ -94,7 +94,7 @@ class SessionForegroundService : Service() {
                 "Active Session",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Shows when CurveCall is actively narrating curves"
+                description = "Shows when CurveCue is actively narrating curves"
                 setShowBadge(false)
             }
 

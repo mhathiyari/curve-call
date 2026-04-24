@@ -1,9 +1,11 @@
 package com.curvecall.ui.settings
 
+import android.content.Intent
 import android.speech.tts.TextToSpeech
 import android.speech.tts.Voice
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.curvecall.data.logging.SessionEventLogger
 import com.curvecall.data.preferences.UserPreferences
 import com.curvecall.engine.types.DrivingMode
 import com.curvecall.engine.types.SpeedUnit
@@ -22,10 +24,12 @@ import javax.inject.Inject
  */
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
-    private val userPreferences: UserPreferences
+    private val userPreferences: UserPreferences,
+    private val eventLogger: SessionEventLogger
 ) : ViewModel() {
 
     data class SettingsUiState(
+        val hasSessionLogs: Boolean = false,
         val drivingMode: DrivingMode = DrivingMode.CAR,
         val speedUnits: SpeedUnit = SpeedUnit.KMH,
         val verbosity: Int = 2,
@@ -45,6 +49,19 @@ class SettingsViewModel @Inject constructor(
 
     init {
         observePreferences()
+        refreshLogState()
+    }
+
+    private fun refreshLogState() {
+        _uiState.value = _uiState.value.copy(
+            hasSessionLogs = eventLogger.getLogFiles().isNotEmpty()
+        )
+    }
+
+    /** Returns a share Intent for the latest session log, or null if none exist. */
+    fun shareLatestLog(): Intent? {
+        refreshLogState()
+        return eventLogger.shareLatestLog()
     }
 
     private fun observePreferences() {

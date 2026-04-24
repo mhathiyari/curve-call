@@ -2,6 +2,7 @@ package com.curvecall.di
 
 import android.content.Context
 import com.curvecall.audio.AndroidTtsEngine
+import com.curvecall.data.logging.SessionEventLogger
 import com.curvecall.data.geocoding.GeocodingService
 import com.curvecall.data.location.LocationProvider
 import com.curvecall.data.preferences.UserPreferences
@@ -150,6 +151,16 @@ object AppModule {
             tileDownloader,
             regionRepository
         )
+    }
+
+    // -- Logging --
+
+    @Provides
+    @Singleton
+    fun provideSessionEventLogger(
+        @ApplicationContext context: Context
+    ): SessionEventLogger {
+        return SessionEventLogger(context)
     }
 
     // -- Engine --

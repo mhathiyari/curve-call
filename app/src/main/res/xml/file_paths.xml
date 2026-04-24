@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- External app-specific files: Android/data/com.curvecall/files/session_logs/ -->
+    <external-files-path name="session_logs" path="session_logs/" />
+    <!-- Internal fallback when external storage is unavailable -->
+    <files-path name="session_logs_internal" path="session_logs/" />
+</paths>

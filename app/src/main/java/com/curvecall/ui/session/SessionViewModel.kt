@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import android.content.Context
 import com.curvecall.data.location.LocationProvider
+import com.curvecall.data.logging.SessionEventLogger
 import com.curvecall.data.preferences.UserPreferences
 import com.curvecall.data.session.SessionDataHolder
 import com.curvecall.engine.MapMatcher
@@ -54,7 +55,8 @@ class SessionViewModel @Inject constructor(
     private val narrationManager: NarrationManager,
     private val ttsEngine: TtsEngine,
     private val userPreferences: UserPreferences,
-    private val sessionDataHolder: SessionDataHolder
+    private val sessionDataHolder: SessionDataHolder,
+    private val eventLogger: SessionEventLogger
 ) : ViewModel(), NarrationManager.NarrationListener {
 
     /**
@@ -221,6 +223,10 @@ class SessionViewModel @Inject constructor(
         previousLocation = null
         _uiState.value = _uiState.value.copy(sessionState = SessionState.PLAYING)
 
+        // Start event log for this session
+        val curveCount = routeSegments.filterIsInstance<RouteSegment.Curve>().size
+        eventLogger.startSession(curveCount, totalRouteDistanceM)
+
         // Start foreground service for background GPS + TTS
         SessionForegroundService.start(appContext)
 
@@ -261,6 +267,7 @@ class SessionViewModel @Inject constructor(
         locationJob = null
         ttsEngine.stop()
         narrationManager.pause()
+        eventLogger.logPause()
         _uiState.value = _uiState.value.copy(sessionState = SessionState.PAUSED)
     }
 
@@ -273,6 +280,7 @@ class SessionViewModel @Inject constructor(
             isOffRoute = false
         )
 
+        eventLogger.logResume()
         narrationManager.resume()
 
         locationJob = viewModelScope.launch {
@@ -292,6 +300,7 @@ class SessionViewModel @Inject constructor(
         ttsEngine.shutdown()
         narrationManager.stop()
         narrationManager.setListener(null)
+        eventLogger.endSession()
         sessionDataHolder.clear()
 
         // Stop foreground service
@@ -330,22 +339,28 @@ class SessionViewModel @Inject constructor(
     // -- NarrationManager.NarrationListener implementation --
 
     override fun onNarration(event: NarrationEvent) {
-        _uiState.value = _uiState.value.copy(lastNarrationText = event.text)
-        if (!_uiState.value.isMuted) {
+        val state = _uiState.value
+        eventLogger.logNarration(state.currentLatitude, state.currentLongitude, state.currentSpeedKmh, event)
+        _uiState.value = state.copy(lastNarrationText = event.text)
+        if (!state.isMuted) {
             ttsEngine.speak(event)
         }
     }
 
     override fun onInterrupt(event: NarrationEvent) {
-        _uiState.value = _uiState.value.copy(lastNarrationText = event.text)
-        if (!_uiState.value.isMuted) {
+        val state = _uiState.value
+        eventLogger.logNarrationInterrupt(state.currentLatitude, state.currentLongitude, state.currentSpeedKmh, event)
+        _uiState.value = state.copy(lastNarrationText = event.text)
+        if (!state.isMuted) {
             ttsEngine.interrupt(event)
         }
     }
 
     override fun onUrgentAlert(event: NarrationEvent) {
-        _uiState.value = _uiState.value.copy(lastNarrationText = event.text)
-        if (!_uiState.value.isMuted) {
+        val state = _uiState.value
+        eventLogger.logUrgentAlert(state.currentLatitude, state.currentLongitude, state.currentSpeedKmh, event)
+        _uiState.value = state.copy(lastNarrationText = event.text)
+        if (!state.isMuted) {
             // Urgent alerts always interrupt — use QUEUE_FLUSH via interrupt()
             ttsEngine.interrupt(event)
         }
@@ -416,6 +431,7 @@ class SessionViewModel @Inject constructor(
         val distFromRoute = matchResult.distanceFromRoute
         if (matchResult.isOffRoute) {
             if (!_uiState.value.isOffRoute) {
+                eventLogger.logOffRoute(location.latitude, location.longitude, distFromRoute)
                 _uiState.value = _uiState.value.copy(
                     isOffRoute = true,
                     offRouteDistanceM = distFromRoute,
@@ -432,6 +448,7 @@ class SessionViewModel @Inject constructor(
             return
         } else if (_uiState.value.isOffRoute) {
             // Back on route
+            eventLogger.logBackOnRoute(location.latitude, location.longitude)
             _uiState.value = _uiState.value.copy(isOffRoute = false)
             if (!_uiState.value.isMuted) {
                 ttsEngine.speak("Back on route. Resuming narration.", priority = 10)
@@ -617,6 +634,7 @@ class SessionViewModel @Inject constructor(
         ttsEngine.shutdown()
         narrationManager.stop()
         narrationManager.setListener(null)
+        eventLogger.endSession()
         // Stop foreground service to prevent it from running indefinitely
         SessionForegroundService.stop(appContext)
     }

@@ -22,6 +22,11 @@ local.properties
 # Kotlin
 *.class
 
+# Signing
+*.jks
+*.keystore
+gradle.properties
+
 # Misc
 *.log
 *.tmp

@@ -44,6 +44,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import android.content.Intent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -330,6 +331,28 @@ fun SettingsScreen(
                 colors = ButtonDefaults.buttonColors(containerColor = CurveCuePrimary)
             ) {
                 Text("Manage Offline Regions")
+            }
+
+            SettingDivider()
+
+            // ===== SESSION LOGS SECTION =====
+            SectionHeader("Session Logs")
+
+            SettingLabel(
+                "Debug Logs",
+                description = "Export the latest session's timestamped event log (CSV) for post-ride analysis."
+            )
+
+            Button(
+                onClick = {
+                    val intent = viewModel.shareLatestLog() ?: return@Button
+                    context.startActivity(Intent.createChooser(intent, "Share session log"))
+                },
+                enabled = uiState.hasSessionLogs,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = CurveCuePrimary)
+            ) {
+                Text(if (uiState.hasSessionLogs) "Export Latest Log" else "No Logs Yet")
             }
 
             Spacer(modifier = Modifier.height(32.dp))

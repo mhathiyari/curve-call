@@ -369,14 +369,6 @@ body {
   transform: rotate(45deg);
   font-size: 13px; font-weight: 700; color: #000;
 }
-.curve-dot {
-  width: 14px; height: 14px;
-  border-radius: 50%;
-  border: 2px solid rgba(0,0,0,0.3);
-  box-shadow: 0 0 8px currentColor;
-  transition: transform 0.2s;
-}
-.curve-dot:hover { transform: scale(1.3); }
 
 /* Curve popup */
 .leaflet-popup-content-wrapper {
@@ -895,7 +887,6 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
 // ─── Map layers ───
 let routeLayer = null;
 let curveSegmentLayers = [];
-let curveMarkers = [];
 let fromMarker = null;
 let toMarker = null;
 
@@ -904,14 +895,6 @@ function createPinIcon(type) {
     className: 'custom-marker',
     html: `<div class="marker-pin ${type}"><span class="marker-label">${type === 'from' ? 'A' : 'B'}</span></div>`,
     iconSize: [32, 42], iconAnchor: [16, 42], popupAnchor: [0, -42],
-  });
-}
-function createCurveIcon(severity) {
-  const color = SEVERITY[severity]?.color || '#888';
-  return L.divIcon({
-    className: 'curve-marker-icon',
-    html: `<div class="curve-dot" style="background:${color}"></div>`,
-    iconSize: [14, 14], iconAnchor: [7, 7],
   });
 }
 
@@ -1030,7 +1013,6 @@ async function fetchAndAnalyzeRoute() {
     state.curves = result.curves || [];
 
     renderCurveSegments(coords);
-    renderCurveMarkers();
     renderBottomSheet();
     hideLoading();
     setSheetState('peek');
@@ -1046,8 +1028,6 @@ function clearRouteDisplay() {
   if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
   curveSegmentLayers.forEach(l => map.removeLayer(l));
   curveSegmentLayers = [];
-  curveMarkers.forEach(m => map.removeLayer(m));
-  curveMarkers = [];
   state.curves = [];
   $playBtn.style.display = 'none';
 }
@@ -1077,7 +1057,7 @@ function resetDemo() {
 }
 
 function renderCurveSegments(coords) {
-  state.curves.forEach(curve => {
+  state.curves.forEach((curve, i) => {
     if (!curve.startPoint || !curve.endPoint) return;
     const color = SEVERITY[curve.severity]?.color || '#888';
     const startIdx = findClosestCoordIndex(coords, curve.startPoint);
@@ -1087,7 +1067,11 @@ function renderCurveSegments(coords) {
     const max = Math.max(startIdx, endIdx);
     const segCoords = coords.slice(min, max + 1).map(c => [c[1], c[0]]);
     if (segCoords.length < 2) return;
-    const layer = L.polyline(segCoords, { color, weight: 6, opacity: 0.85, lineCap: 'round', lineJoin: 'round' }).addTo(map);
+    const sev = SEVERITY[curve.severity] || SEVERITY.GENTLE;
+    const popupHtml = `<div class="popup-severity" style="background:${sev.color};color:#000">${sev.label}</div><div class="popup-narration">${curve.narration || ''}</div><div class="popup-stats">${curve.arcLength ? `<span class="popup-stat">&#x1F4CF; ${Math.round(curve.arcLength)}m</span>` : ''}${curve.advisorySpeedKmh ? `<span class="popup-stat">&#x26A1; ${Math.round(curve.advisorySpeedKmh)} km/h</span>` : ''}${curve.minRadius ? `<span class="popup-stat">&#x1F504; R${Math.round(curve.minRadius)}m</span>` : ''}</div>`;
+    const layer = L.polyline(segCoords, { color, weight: 8, opacity: 0.85, lineCap: 'round', lineJoin: 'round' })
+      .bindPopup(popupHtml, { maxWidth: 260 })
+      .addTo(map);
     curveSegmentLayers.push(layer);
   });
 }
@@ -1101,16 +1085,7 @@ function findClosestCoordIndex(coords, point) {
   return idx;
 }
 
-function renderCurveMarkers() {
-  state.curves.forEach((curve, i) => {
-    const pt = curve.startPoint || curve.endPoint;
-    if (!pt) return;
-    const sev = SEVERITY[curve.severity] || SEVERITY.GENTLE;
-    const popupHtml = `<div class="popup-severity" style="background:${sev.color};color:#000">${sev.label}</div><div class="popup-narration">${curve.narration || ''}</div><div class="popup-stats">${curve.arcLength ? `<span class="popup-stat">&#x1F4CF; ${Math.round(curve.arcLength)}m</span>` : ''}${curve.advisorySpeedKmh ? `<span class="popup-stat">&#x26A1; ${Math.round(curve.advisorySpeedKmh)} km/h</span>` : ''}${curve.minRadius ? `<span class="popup-stat">&#x1F504; R${Math.round(curve.minRadius)}m</span>` : ''}</div>`;
-    const marker = L.marker([pt.lat, pt.lon], { icon: createCurveIcon(curve.severity) }).bindPopup(popupHtml, { maxWidth: 260 }).addTo(map);
-    curveMarkers.push(marker);
-  });
-}
+
 
 // ─── Bottom Sheet ───
 function renderBottomSheet() {
@@ -1150,8 +1125,8 @@ function zoomToCurve(index, isPlayback = false) {
   const pt = curve.startPoint || curve.endPoint; if (!pt) return;
   map.flyTo([pt.lat, pt.lon], 16, { duration: 0.5 });
   // Close all popups, open current
-  curveMarkers.forEach(m => m.closePopup());
-  if (curveMarkers[index]) curveMarkers[index].openPopup();
+  curveSegmentLayers.forEach(l => l.closePopup());
+  if (curveSegmentLayers[index]) curveSegmentLayers[index].openPopup();
   // Update list: highlight current, dim past during playback
   $curveList.querySelectorAll('.curve-item').forEach(el => {
     const i = parseInt(el.dataset.index);

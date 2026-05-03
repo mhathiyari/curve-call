@@ -71,6 +71,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -152,6 +153,7 @@ fun DestinationScreen(
 
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    val focusManager = LocalFocusManager.current
 
     // Show errors via snackbar
     LaunchedEffect(uiState.errorMessage) {
@@ -269,6 +271,7 @@ fun DestinationScreen(
                     SearchResultsList(
                         results = uiState.searchResults,
                         onResultSelected = { result ->
+                            focusManager.clearFocus()
                             viewModel.onSearchResultSelected(result)
                         },
                         modifier = Modifier

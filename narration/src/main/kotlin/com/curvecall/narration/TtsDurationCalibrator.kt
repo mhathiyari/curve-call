@@ -68,7 +68,7 @@ class TtsDurationCalibrator {
 
         // Keep rolling window
         while (samples.size > MAX_SAMPLES) {
-            samples.removeFirst()
+            samples.removeAt(0)
         }
 
         if (samples.size >= MIN_SAMPLES) {

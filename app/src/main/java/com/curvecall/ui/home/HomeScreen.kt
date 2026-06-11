@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.NearMe
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.TwoWheeler
@@ -67,6 +68,7 @@ import com.curvecall.ui.theme.SeverityModerate
 fun HomeScreen(
     onNavigateToSettings: () -> Unit,
     onNavigateToDestination: () -> Unit = {},
+    onNavigateToCompanionSetup: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -206,6 +208,13 @@ fun HomeScreen(
                     // -- Pick Destination Button (primary, gradient border) --
                     PickDestinationButton(
                         onClick = onNavigateToDestination
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // -- Companion Mode Button (secondary) --
+                    CompanionModeButton(
+                        onClick = onNavigateToCompanionSetup
                     )
                 }
             }
@@ -358,6 +367,60 @@ private fun PickDestinationButton(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = Color.White
+            )
+        }
+    }
+}
+
+/**
+ * Secondary action — launch companion mode (background curve narrator).
+ */
+@Composable
+private fun CompanionModeButton(
+    onClick: () -> Unit
+) {
+    val shape = RoundedCornerShape(14.dp)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .border(
+                width = 1.dp,
+                brush = Brush.linearGradient(
+                    colors = listOf(
+                        CurveCuePrimaryDim.copy(alpha = 0.5f),
+                        CurveCuePrimaryDim.copy(alpha = 0.2f),
+                        CurveCuePrimaryDim.copy(alpha = 0.5f)
+                    )
+                ),
+                shape = shape
+            )
+            .background(
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        CurveCuePrimaryDim.copy(alpha = 0.08f),
+                        CurveCuePrimaryDim.copy(alpha = 0.02f)
+                    )
+                ),
+                shape = shape
+            )
+            .clip(shape)
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Default.GraphicEq,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = CurveCuePrimary.copy(alpha = 0.7f)
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = "Companion Mode",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Medium,
+                color = Color.White.copy(alpha = 0.7f)
             )
         }
     }

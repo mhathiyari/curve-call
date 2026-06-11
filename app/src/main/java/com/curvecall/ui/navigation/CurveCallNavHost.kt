@@ -13,6 +13,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import com.curvecall.ui.about.AboutScreen
+import com.curvecall.ui.companion.CompanionSetupScreen
 import com.curvecall.ui.destination.DestinationScreen
 import com.curvecall.ui.home.HomeScreen
 import com.curvecall.ui.preview.RoutePreviewScreen
@@ -46,6 +47,9 @@ fun CurveCallNavHost(
                 },
                 onNavigateToDestination = {
                     navController.navigate(NavRoutes.DESTINATION)
+                },
+                onNavigateToCompanionSetup = {
+                    navController.navigate(NavRoutes.COMPANION_SETUP)
                 }
             )
         }
@@ -194,6 +198,32 @@ fun CurveCallNavHost(
                         // Clear back stack up to home so "back" from session goes home
                         popUpTo(NavRoutes.HOME)
                     }
+                }
+            )
+        }
+
+        composable(
+            NavRoutes.COMPANION_SETUP,
+            enterTransition = {
+                slideInVertically(
+                    initialOffsetY = { it / 3 },
+                    animationSpec = tween(350)
+                ) + fadeIn(tween(300))
+            },
+            popExitTransition = {
+                slideOutVertically(
+                    targetOffsetY = { it / 3 },
+                    animationSpec = tween(300)
+                ) + fadeOut(tween(200))
+            }
+        ) {
+            CompanionSetupScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onStartCompanion = {
+                    // Go back to home — user opens Google Maps, companion runs in background
+                    navController.popBackStack(NavRoutes.HOME, inclusive = false)
                 }
             )
         }

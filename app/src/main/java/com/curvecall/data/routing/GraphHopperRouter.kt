@@ -122,6 +122,13 @@ class GraphHopperRouter(private val context: Context) {
     }
 
     /**
+     * Expose the underlying GraphHopper instance for direct graph traversal.
+     * Used by RoadScanner to access locationIndex and baseGraph for
+     * companion mode road-ahead scanning.
+     */
+    fun getHopper(): GraphHopper? = hopper
+
+    /**
      * Release resources. Safe to call multiple times.
      */
     fun close() {

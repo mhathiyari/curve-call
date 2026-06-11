@@ -11,4 +11,5 @@ object NavRoutes {
     const val REGIONS = "regions"
     const val DESTINATION = "destination"
     const val ROUTE_PREVIEW = "route_preview"
+    const val COMPANION_SETUP = "companion_setup"
 }

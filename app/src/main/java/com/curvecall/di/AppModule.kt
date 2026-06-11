@@ -2,6 +2,7 @@ package com.curvecall.di
 
 import android.content.Context
 import com.curvecall.audio.AndroidTtsEngine
+import com.curvecall.companion.RoadScanner
 import com.curvecall.data.geocoding.GeocodingService
 import com.curvecall.data.location.LocationProvider
 import com.curvecall.data.preferences.UserPreferences
@@ -150,6 +151,16 @@ object AppModule {
             tileDownloader,
             regionRepository
         )
+    }
+
+    // -- Companion Mode --
+
+    @Provides
+    @Singleton
+    fun provideRoadScanner(
+        graphHopperRouter: GraphHopperRouter
+    ): RoadScanner {
+        return RoadScanner(graphHopperRouter)
     }
 
     // -- Engine --

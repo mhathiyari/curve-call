@@ -28,7 +28,8 @@ import java.util.Locale
  */
 class AndroidTtsEngine(
     private val context: Context,
-    private val calibrator: TtsDurationCalibrator? = null
+    private val calibrator: TtsDurationCalibrator? = null,
+    private val perUtteranceFocus: Boolean = false
 ) : TtsEngine {
 
     private var tts: TextToSpeech? = null
@@ -63,8 +64,14 @@ class AndroidTtsEngine(
             }
         }
 
-        // Build audio focus request — held for the session, not per-utterance
-        focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+        // Build audio focus request
+        // Per-utterance mode: use GAIN_TRANSIENT to fully pause other audio during speech
+        // Session mode: use MAY_DUCK so other audio just lowers volume
+        val focusGainType = if (perUtteranceFocus)
+            AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
+        else
+            AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
+        focusRequest = AudioFocusRequest.Builder(focusGainType)
             .setAudioAttributes(audioAttributes)
             .setOnAudioFocusChangeListener { focusChange ->
                 when (focusChange) {
@@ -94,9 +101,12 @@ class AndroidTtsEngine(
                 }
                 utteranceStartTimeMs = 0L
 
-                // Don't abandon audio focus here — hold it for the session to avoid
-                // audio mixer reconfiguration crackle between rapid narrations.
-                // Focus is released on stop() / shutdown().
+                // Per-utterance mode: release focus after each utterance so the
+                // nav app (Google Maps) can resume immediately.
+                // Session mode: hold focus to avoid audio mixer crackle.
+                if (perUtteranceFocus) {
+                    abandonAudioFocus()
+                }
                 currentEvent = null
                 if (event != null) {
                     listener?.onSpeechComplete(event)

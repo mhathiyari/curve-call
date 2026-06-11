@@ -24,6 +24,9 @@
     <!-- Post notifications (Android 13+) for foreground service -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Overlay permission for companion mode floating bubble -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
     <application
         android:name=".CurveCallApplication"
         android:allowBackup="true"
@@ -55,6 +58,12 @@
         <!-- Foreground service for GPS tracking and TTS narration -->
         <service
             android:name=".service.SessionForegroundService"
+            android:foregroundServiceType="location"
+            android:exported="false" />
+
+        <!-- Foreground service for companion mode (background curve narrator) -->
+        <service
+            android:name=".service.CompanionForegroundService"
             android:foregroundServiceType="location"
             android:exported="false" />
 
